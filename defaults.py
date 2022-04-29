@@ -3,8 +3,8 @@ import tensorflow as tf
 
 def get_default_params():
     return dict(
-        nsteps=8192,
-        nminibatches=32,
+        nsteps=8192, #     nbatch = nenvs * nsteps
+        nminibatches=32, #     nbatch_train = nbatch // nminibatches,     nupdates = total_timesteps//nbatch
         lam=0.95,
         gamma=0.995,
         noptepochs=6,

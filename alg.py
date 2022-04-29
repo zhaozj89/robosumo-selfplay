@@ -226,7 +226,7 @@ def learn(*, network, env, total_timesteps, eval_env=None, seed=None, nsteps=204
             logger.logkv("misc/total_timesteps", update*nbatch)
             logger.logkv("misc/explained_variance", float(ev))
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('epdenserewmean', safemean([epinfo['dr'] for epinfo in epinfobuf]))
+            logger.logkv('epdenserewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             # if eval_env is not None:
             #     logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]) )
