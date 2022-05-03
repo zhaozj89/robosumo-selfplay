@@ -16,7 +16,7 @@ def constfn(val):
     return f
 
 
-def learn(*, network, env, total_timesteps, eval_env=None, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4, vf_coef=0.5,
+def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4, vf_coef=0.5,
           max_grad_norm=0.5, gamma=0.99, lam=0.95, log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
           save_interval=1, load_path=None, model_fn=None, update_fn=None, init_fn=None, mpi_rank_weight=1, comm=None,
           nagent=1, anneal_bound=500, **network_kwargs):
@@ -105,16 +105,20 @@ def learn(*, network, env, total_timesteps, eval_env=None, seed=None, nsteps=204
         from model import Model
         model_fn = Model
 
-    model = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
+    model = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
                      nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm,
                      model_scope='model_%d' % 0)
     models = [model]
     for i in range(1, nagent):
         models.append(
-            model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
+            model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
                      nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm, trainable=False,
                      model_scope='model_%d' % i))
     writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_session().graph)
+
+    model_util = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
+                        nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm, trainable=False,
+                        model_scope='model_util')
 
     if load_path is not None:
         for i in range(nagent):
@@ -148,8 +152,14 @@ def learn(*, network, env, total_timesteps, eval_env=None, seed=None, nsteps=204
         # Calculate the cliprange
         cliprangenow = cliprange(frac)
 
+        # Get minibatch
+        obs, returns, masks, actions, values, neglogpacs, rewards, states, epinfos = runner.run(update)
+        if eval_env is not None:
+            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, \
+            eval_states, eval_epinfos = eval_runner.run()
+
         # Set opponents' model
-        if update == 1:
+        if update == -1:
             if update % log_interval == 0:
                 logger.info('Stepping environment...Compete with random opponents')
         else:
@@ -157,16 +167,28 @@ def learn(*, network, env, total_timesteps, eval_env=None, seed=None, nsteps=204
             # all parallel environments get same opponent model
             old_versions = [round(np.random.uniform(1, update - 1)) for _ in range(nagent - 1)]
             old_model_paths = [osp.join(checkdir, '%.5i' % old_id) for old_id in old_versions]
-            for i in range(1, nagent):
-                runner.models[i].load(old_model_paths[i - 1])
-            if update % log_interval == 0:
-                logger.info('Stepping environment...Compete with', ', '.join([str(old_id) for old_id in old_versions]))
-
-        # Get minibatch
-        obs, returns, masks, actions, values, neglogpacs, rewards, states, epinfos = runner.run(update)
-        if eval_env is not None:
-            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, \
-            eval_states, eval_epinfos = eval_runner.run()
+            old_model_paths.sort()
+            assert(nagent==2, 'ONLY support two agents training')
+            if opponent_mode=='random':
+                for i in range(1, nagent):
+                    runner.models[i].load(old_model_paths[i - 1])
+                if update % log_interval == 0:
+                    logger.info('Stepping environment...Compete with', ', '.join([str(old_id) for old_id in old_versions]))
+            elif opponent_mode=='latest':
+                runner.models[1].load(old_model_paths[-1])
+            elif opponent_mode=='ours':
+                ratio_threshold = 0.2
+                action_prob = runner.models[0].act_model.action_probability(obs, actions)
+                RD_all = []
+                for model_path in old_model_paths:
+                    model_util.load(model_path)
+                    new_action_prob = model_util.act_model.action_probability(obs, actions)
+                    ratio_divergence = (np.abs(new_action_prob / action_prob - 1.)).mean()
+                    RD_all.append(ratio_divergence)
+                RD_all = np.array(RD_all)
+                RD_all = RD_all / RD_all.sum()
+                idx = np.random.choice(len(RD_all), 1, p=RD_all)[0]
+                runner.models[1].load(old_model_paths[idx])
 
         if update % log_interval == 0:
             logger.info('Done.')

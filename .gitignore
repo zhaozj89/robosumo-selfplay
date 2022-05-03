@@ -1,3 +1,6 @@
 /train_log
 /__pycache__
 /.idea
+logs
+.vscode
+
