@@ -159,7 +159,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
             eval_states, eval_epinfos = eval_runner.run()
 
         # Set opponents' model
-        if update == -1:
+        if update == 1:
             if update % log_interval == 0:
                 logger.info('Stepping environment...Compete with random opponents')
         else:
