@@ -172,9 +172,9 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
             assert(nagent==2, 'ONLY support two agents training')
             if opponent_mode=='random':
                 idx = round(np.random.uniform(1, update - 1))
-                runner.models[1].load(old_model_paths[idx])
+                runner.models[1].load(old_model_paths[idx-1])
             elif opponent_mode=='latest':
-                idx = len(old_model_paths) - 1
+                idx = len(old_model_paths) #- 1
                 runner.models[1].load(old_model_paths[-1])
             elif opponent_mode=='ours':
                 action_prob = runner.models[1].act_model.action_probability(opponent_obs, opponent_actions)
