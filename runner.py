@@ -42,6 +42,9 @@ class Runner(AbstractEnvRunner):
     def run(self, update):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
+        # store opponent's observation and action to compute action probability
+        opponent_obs, opponent_actions = [], []
+
         mb_states = self.states
         epinfos = []
         # For n in range number of steps
@@ -59,6 +62,9 @@ class Runner(AbstractEnvRunner):
                     mb_values.append(values)
                     mb_neglogpacs.append(neglogpacs)
                     mb_dones.append(self.dones[:, 0])
+                if agt == 1:
+                    opponent_obs.append(self.obs[:, 1, :].copy())
+                    opponent_actions.append(actions)
                 all_actions.append(actions)
             # Take actions in env and look the results
             # Infos contains a ton of useful informations
@@ -98,6 +104,9 @@ class Runner(AbstractEnvRunner):
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         last_values = self.models[0].value(self.obs[:, 0, :], S=self.states[0], M=self.dones[:, 0])
 
+        opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)
+        opponent_actions = np.asarray(opponent_actions)
+
         # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -112,7 +121,7 @@ class Runner(AbstractEnvRunner):
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
         mb_returns = mb_advs + mb_values
-        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards)),
+        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, opponent_obs, opponent_actions)),
                 mb_states[0], epinfos)
 
 

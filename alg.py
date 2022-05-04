@@ -153,9 +153,9 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         cliprangenow = cliprange(frac)
 
         # Get minibatch
-        obs, returns, masks, actions, values, neglogpacs, rewards, states, epinfos = runner.run(update)
+        obs, returns, masks, actions, values, neglogpacs, rewards, opponent_obs, opponent_actions, states, epinfos = runner.run(update)
         if eval_env is not None:
-            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, \
+            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
             eval_states, eval_epinfos = eval_runner.run()
 
         # Set opponents' model
@@ -165,30 +165,32 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         else:
             # different environment get different opponent model
             # all parallel environments get same opponent model
-            old_versions = [round(np.random.uniform(1, update - 1)) for _ in range(nagent - 1)]
-            old_model_paths = [osp.join(checkdir, '%.5i' % old_id) for old_id in old_versions]
+            #old_versions = [round(np.random.uniform(1, update - 1)) for _ in range(nagent - 1)]
+            #old_model_paths = [osp.join(checkdir, '%.5i' % old_id) for old_id in old_versions]
+            old_model_paths = [osp.join(checkdir, f) for f in os.listdir(checkdir)]
             old_model_paths.sort()
             assert(nagent==2, 'ONLY support two agents training')
             if opponent_mode=='random':
-                for i in range(1, nagent):
-                    runner.models[i].load(old_model_paths[i - 1])
-                if update % log_interval == 0:
-                    logger.info('Stepping environment...Compete with', ', '.join([str(old_id) for old_id in old_versions]))
+                idx = round(np.random.uniform(1, update - 1))
+                runner.models[1].load(old_model_paths[idx])
             elif opponent_mode=='latest':
+                idx = len(old_model_paths) - 1
                 runner.models[1].load(old_model_paths[-1])
             elif opponent_mode=='ours':
-                ratio_threshold = 0.2
-                action_prob = runner.models[0].act_model.action_probability(obs, actions)
+                action_prob = runner.models[1].act_model.action_probability(opponent_obs, opponent_actions)
                 RD_all = []
                 for model_path in old_model_paths:
                     model_util.load(model_path)
-                    new_action_prob = model_util.act_model.action_probability(obs, actions)
+                    new_action_prob = model_util.act_model.action_probability(opponent_obs, opponent_actions)
                     ratio_divergence = (np.abs(new_action_prob / action_prob - 1.)).mean()
                     RD_all.append(ratio_divergence)
                 RD_all = np.array(RD_all)
                 RD_all = RD_all / RD_all.sum()
                 idx = np.random.choice(len(RD_all), 1, p=RD_all)[0]
                 runner.models[1].load(old_model_paths[idx])
+
+            if update % log_interval == 0:
+                logger.info('Stepping environment...Compete with version %d' %(idx))
 
         if update % log_interval == 0:
             logger.info('Done.')
