@@ -100,8 +100,7 @@ class PolicyWithValue(object):
         return a, v, state, neglogp
 
     def action_probability(self, observation, actions, **extra_feed):
-        pd = self._evaluate(self.pd, observation, **extra_feed)
-        neglogp = pd.neglogp(actions)
+        neglogp = self._evaluate(self.neglogp, observation, **extra_feed)
         ret = neglogp.reshape((-1, 1))
         # for i in range(osz[0]):
         #     action = self._evaluate([self._policy_proba], observation[i, :], **extra_feed)
