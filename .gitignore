@@ -3,4 +3,8 @@
 /.idea
 logs
 .vscode
+*.png
+*.pkl
+*.csv
+*.ckpt
 

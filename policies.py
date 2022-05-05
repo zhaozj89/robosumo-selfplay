@@ -16,7 +16,7 @@ class PolicyWithValue(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, observations, latent, action=None, estimate_q=False, vf_latent=None, sess=None, **tensors):
+    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, sess=None, **tensors):
         """
         Parameters:
         ----------
@@ -50,15 +50,11 @@ class PolicyWithValue(object):
         self.pd, self.pi = self.pdtype.pdfromlatent(latent, init_scale=0.01)
 
         # Take an action
-        if action == None:
-            self.action = self.pd.sample()
-        else:
-            self.action = action
-
-        #self._policy_proba = tf.nn.softmax(self.action)
+        self.action = self.pd.sample()
 
         # Calculate the neg log of our probability
         self.neglogp = self.pd.neglogp(self.action)
+        self.p_mean, self.p_std = self.pd.mean, self.pd.std
         self.sess = sess or tf.get_default_session()
 
         if estimate_q:
@@ -102,7 +98,10 @@ class PolicyWithValue(object):
         return a, v, state, neglogp
 
     def action_probability(self, observation, action, **extra_feed):
-        neglogp = self._evaluate(self.neglogp, observation, action=action)
+        p_mean, p_std = self._evaluate([self.p_mean, self.p_std], observation)
+        neglogp = 0.5 * np.square((action - p_mean) / p_std).sum(axis=-1) \
+               + 0.5 * np.log(2.0 * np.pi) * action.shape[-1] \
+               + np.log(p_std).sum(axis=-1)
         ret = np.exp(-neglogp).reshape(-1, 1)
         return ret
 

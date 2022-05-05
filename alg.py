@@ -8,6 +8,7 @@ from baselines.common import explained_variance, set_global_seeds
 from policies import build_policy
 from runner import Runner
 import tensorflow as tf
+import copy
 
 
 def constfn(val):
@@ -109,6 +110,8 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
                      nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm,
                      model_scope='model_%d' % 0)
     models = [model]
+    checkdir = osp.join(logger.get_dir(), 'checkpoints')
+    model.save(osp.join(checkdir, '00000'))
     for i in range(1, nagent):
         models.append(
             model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
@@ -137,7 +140,6 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
 
     # Start total timer
     tfirststart = time.perf_counter()
-    checkdir = osp.join(logger.get_dir(), 'checkpoints')
 
     # number of iterations
     nupdates = total_timesteps//nbatch
@@ -152,16 +154,12 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         # Calculate the cliprange
         cliprangenow = cliprange(frac)
 
-        # Get minibatch
-        obs, returns, masks, actions, values, neglogpacs, rewards, opponent_obs, opponent_actions, states, epinfos = runner.run(update)
-        if eval_env is not None:
-            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
-            eval_states, eval_epinfos = eval_runner.run()
-
         # Set opponents' model
         if update == 1:
+            # initialize the opponent as a copy of the initial agent
+            runner.models[1].load(osp.join(checkdir, '00000'))
             if update % log_interval == 0:
-                logger.info('Stepping environment...Compete with random opponents')
+                logger.info('Stepping environment...Compete with v0')
         else:
             # different environment get different opponent model
             # all parallel environments get same opponent model
@@ -171,27 +169,38 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
             old_model_paths.sort()
             assert(nagent==2, 'ONLY support two agents training')
             if opponent_mode=='random':
-                idx = round(np.random.uniform(1, update - 1))
-                runner.models[1].load(old_model_paths[idx-1])
+                idx = np.random.choice(update, 1)[0]
+                runner.models[1].load(old_model_paths[idx])
             elif opponent_mode=='latest':
-                idx = len(old_model_paths) #- 1
+                idx = update - 1
                 runner.models[1].load(old_model_paths[-1])
             elif opponent_mode=='ours':
                 action_prob = runner.models[1].act_model.action_probability(opponent_obs, opponent_actions)
-                RD_all = []
-                for model_path in old_model_paths:
-                    model_util.load(model_path)
+                if len(old_model_paths) > 30:
+                    subsample_idx = np.random.choice(len(old_model_paths), 30, replace=False)
+                    subsample_idx = np.sort(subsample_idx)
+                else:
+                    subsample_idx = np.arange(len(old_model_paths))
+                RD_list = []
+                for i in subsample_idx:
+                    model_util.load(old_model_paths[i])
                     new_action_prob = model_util.act_model.action_probability(opponent_obs, opponent_actions)
                     ratio_divergence = (np.abs(new_action_prob / action_prob - 1.)).mean()
-                    RD_all.append(ratio_divergence)
-                print (RD_all)
-                RD_all = np.array(RD_all)
-                RD_all = RD_all / RD_all.sum()
-                idx = np.random.choice(len(RD_all), 1, p=RD_all)[0]
+                    RD_list.append(ratio_divergence)
+                print (RD_list)
+                RD_list = np.array(RD_list)
+                RD_list = RD_list / RD_list.sum()
+                idx = subsample_idx[np.random.choice(len(RD_list), 1, p=RD_list)[0]]
                 runner.models[1].load(old_model_paths[idx])
 
             if update % log_interval == 0:
                 logger.info('Stepping environment...Compete with version %d' %(idx))
+
+        # Get minibatch
+        obs, returns, masks, actions, values, neglogpacs, rewards, opponent_obs, opponent_actions, states, epinfos = runner.run(update)
+        if eval_env is not None:
+            eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
+            eval_states, eval_epinfos = eval_runner.run()
 
         if update % log_interval == 0:
             logger.info('Done.')
