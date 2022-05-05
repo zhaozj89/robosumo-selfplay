@@ -184,6 +184,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
                     new_action_prob = model_util.act_model.action_probability(opponent_obs, opponent_actions)
                     ratio_divergence = (np.abs(new_action_prob / action_prob - 1.)).mean()
                     RD_all.append(ratio_divergence)
+                print (RD_all)
                 RD_all = np.array(RD_all)
                 RD_all = RD_all / RD_all.sum()
                 idx = np.random.choice(len(RD_all), 1, p=RD_all)[0]

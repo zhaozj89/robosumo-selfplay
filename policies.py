@@ -16,7 +16,7 @@ class PolicyWithValue(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, sess=None, **tensors):
+    def __init__(self, env, observations, latent, action=None, estimate_q=False, vf_latent=None, sess=None, **tensors):
         """
         Parameters:
         ----------
@@ -50,7 +50,10 @@ class PolicyWithValue(object):
         self.pd, self.pi = self.pdtype.pdfromlatent(latent, init_scale=0.01)
 
         # Take an action
-        self.action = self.pd.sample()
+        if action == None:
+            self.action = self.pd.sample()
+        else:
+            self.action = action
 
         #self._policy_proba = tf.nn.softmax(self.action)
 
@@ -68,13 +71,12 @@ class PolicyWithValue(object):
 
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess
-        feed_dict = {self.X: observation}
-        # feed_dict = {self.X: adjust_shape(self.X, observation)}
-        # for inpt_name, data in extra_feed.items():
-        #     if inpt_name in self.__dict__.keys():
-        #         inpt = self.__dict__[inpt_name]
-        #         if isinstance(inpt, tf.Tensor) and inpt._op.type == 'Placeholder':
-        #             feed_dict[inpt] = adjust_shape(inpt, data)
+        feed_dict = {self.X: adjust_shape(self.X, observation)}
+        for inpt_name, data in extra_feed.items():
+            if inpt_name in self.__dict__.keys():
+                inpt = self.__dict__[inpt_name]
+                if isinstance(inpt, tf.Tensor) and inpt._op.type == 'Placeholder':
+                    feed_dict[inpt] = adjust_shape(inpt, data)
 
         return sess.run(variables, feed_dict)
 
@@ -99,11 +101,9 @@ class PolicyWithValue(object):
             state = None
         return a, v, state, neglogp
 
-    def action_probability(self, observation, actions, **extra_feed):
-        neglogp = self._evaluate(self.neglogp, observation, **extra_feed)
-        ret = neglogp.reshape((-1, 1))
-        # for i in range(osz[0]):
-        #     action = self._evaluate([self._policy_proba], observation[i, :], **extra_feed)
+    def action_probability(self, observation, action, **extra_feed):
+        neglogp = self._evaluate(self.neglogp, observation, action=action)
+        ret = np.exp(-neglogp).reshape(-1, 1)
         return ret
 
     def value(self, ob, *args, **kwargs):
