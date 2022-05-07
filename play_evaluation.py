@@ -1,3 +1,5 @@
+# python3 play_evaluation.py --label ours --path logs/RoboSumo-Ant-vs-Ant-v0-0 --max_version 1 --trials 10
+
 import tensorflow as tf
 import os.path as osp
 from video_recorder import VideoRecorder
@@ -16,12 +18,21 @@ from robosumo.policy_zoo import LSTMPolicy, MLPPolicy
 from model import Model
 model_fn = Model
 
+import argparse
+
+
+parser = argparse.ArgumentParser(description='Evaluate pre-trained agents against each other.')
+parser.add_argument('--label', help='choice of opponent strategy', type=str, default="ours")
+parser.add_argument('--path', help='model path', type=str, default=None)
+parser.add_argument('--max_version', type=int, default=1e10)
+parser.add_argument('--trials', type=int, default=10)
+args = parser.parse_args()
 
 # configure
-path = 'RoboSumo-Ant-vs-Ant-v0-2022-04-17-11-59-54-559389'
-ID_length = 122
+path = args.path
+ID_length = min(len(list(os.listdir(path + '/checkpoints'))), args.max_version) - 1
 current_id = 1
-round_total = 30
+round_total = args.trials
 
 # record
 ep_id = 0
@@ -51,6 +62,7 @@ sess.__enter__()
 sess.run(tf.variables_initializer(tf.global_variables()))
 
 opponent_dir = os.path.join("robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy")
+#opponent_dir = 'logs_random/RoboSumo-Ant-vs-Ant-v0-0/checkpoints/00305'
 opponent_policy = MLPPolicy(scope='policy1', reuse=False,
                             ob_space=ob_space,
                             ac_space=ac_space,
@@ -94,4 +106,4 @@ while True:
 
         obs = env.reset()
 
-s_win_rate.to_excel('saved_file.xlsx', index = False)
+s_win_rate.to_csv('eval_against_fix_%s.csv' %(args.label), index = False)
