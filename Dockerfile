@@ -6,7 +6,7 @@ RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machi
 
 RUN apt-get update && apt-get install -y \
     vim wget unzip python3-pip \
-    libosmesa6-dev libgl1-mesa-glx libgl1-mesa-dev patchelf libglfw3 build-essential
+    libosmesa6-dev libgl1-mesa-glx libgl1-mesa-dev patchelf libglfw3 build-essential ffmpeg
 
 USER root
 RUN python3 -m pip install --upgrade pip
