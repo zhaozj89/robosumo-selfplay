@@ -1,3 +1,4 @@
+# python3 plot.py --type eval_against_fix
 from baselines.common import plot_util as pu
 import matplotlib
 matplotlib.use('agg')
@@ -16,6 +17,8 @@ if args.type == 'train_reward':
 
     labels = ['ours', 'random', 'latest']
     folders = ['logs_ours', 'logs_random', 'logs_latest']
+    labels = ['ours', 'origin']
+    folders = ['logs_ours_100M', 'logs_origin_100M']
     results = {}
 
     for label, folder in zip(labels, folders):
@@ -35,11 +38,12 @@ if args.type == 'train_reward':
 
 if args.type == 'eval_against_fix':
 
-    labels = ['ours', 'random', 'latest']
+    labels = ['random_env_64', 'random_env_64_direct', 'random_env_64_op', 'random_env_64_both']
     plt.figure()
     for label in labels:
         win_rate = pd.read_csv('eval_against_fix_%s.csv' %(label))
         plt.plot(win_rate, label=label)
+        #plt.plot([int(label.split('_')[-1]) * (50 * i) * 8196 for i in range(len(win_rate))], win_rate, label=label)
     plt.legend()
     plt.savefig('eval_against_fix.png')
     plt.close()

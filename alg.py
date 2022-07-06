@@ -10,6 +10,11 @@ from runner import Runner
 import tensorflow as tf
 import copy
 
+from robosumo.policy_zoo.utils import load_params, set_from_flat
+from robosumo.policy_zoo import MLPPolicy
+
+import matplotlib.pyplot as plt
+
 
 def constfn(val):
     def f(_):
@@ -17,10 +22,10 @@ def constfn(val):
     return f
 
 
-def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4, vf_coef=0.5,
+def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_data=None, eval_env=None, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4, vf_coef=0.5,
           max_grad_norm=0.5, gamma=0.99, lam=0.95, log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
           save_interval=1, load_path=None, model_fn=None, update_fn=None, init_fn=None, mpi_rank_weight=1, comm=None,
-          nagent=1, anneal_bound=500, **network_kwargs):
+          nagent=1, anneal_bound=500, fix_opponent_path='robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy', **network_kwargs):
     '''
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
@@ -157,7 +162,21 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         # Set opponents' model
         if update == 1:
             # initialize the opponent as a copy of the initial agent
-            runner.models[1].load(osp.join(checkdir, '00000'))
+            if opponent_mode == 'fix':
+                fix_opponent = MLPPolicy(scope='policy1', reuse=False,
+                                    ob_space=ob_space,
+                                    ac_space=ac_space,
+                                    hiddens=[64, 64], normalize=True)
+                opponent_params = load_params(fix_opponent_path)
+                set_from_flat(fix_opponent.get_variables(), opponent_params)
+                print (fix_opponent.get_variables())
+                print (runner.models[1])
+                opponent_policy = build_policy(env, fix_opponent, num_hidden=64, activation=tf.nn.relu, value_network='copy')
+                runner.models[1] = model_fn(policy=opponent_policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
+                    nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm, trainable=False,
+                    model_scope='model_1')
+            else:
+                runner.models[1].load(osp.join(checkdir, '00000'))
             if update % log_interval == 0:
                 logger.info('Stepping environment...Compete with v0')
         else:
@@ -201,6 +220,39 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         if eval_env is not None:
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
             eval_states, eval_epinfos = eval_runner.run()
+        
+        # compute off-policy, off-env ratio
+        off_policy_ratio = np.exp(neglogpacs[1] - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
+        #off_policy_ratio = models[0].act_model.action_probability(obs[1], actions[1]) / np.exp(-neglogpacs[1])
+        off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], actions[0], return_neglogp=True))
+        #off_env_ratio = models[1].act_model.action_probability(obs[0], actions[0]) / np.exp(-neglogpacs[0])
+        total_ratio = off_policy_ratio * off_env_ratio
+
+        plt.figure(figsize=(16, 9))
+        plt.subplot(1, 3, 1)
+        plt.hist(off_policy_ratio)
+        plt.subplot(1, 3, 2)
+        plt.hist(off_env_ratio)
+        plt.subplot(1, 3, 3)
+        plt.hist(total_ratio)
+        os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
+        plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
+
+        if use_opponent_data is None:
+            obs, returns, masks, actions, values, neglogpacs, rewards = \
+                list(map(lambda x: x[0], (obs, returns, masks, actions, values, neglogpacs, rewards)))
+        else:
+            obs, returns, masks, actions, values, neglogpacs, rewards = \
+                list(map(lambda x: np.concatenate([x[i] for i in range(2)], axis=0), (obs, returns, masks, actions, values, neglogpacs, rewards)))
+
+        if use_opponent_data is None:
+            weights = np.ones(nbatch, dtype=np.float32)
+        elif use_opponent_data == 'direct':
+            weights = np.ones(2 * nbatch, dtype=np.float32)
+        elif use_opponent_data == 'off_policy':
+            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), off_policy_ratio])
+        elif use_opponent_data == 'both':
+            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), total_ratio])
 
         if update % log_interval == 0:
             logger.info('Done.')
@@ -214,15 +266,18 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
         if states is None: # nonrecurrent version
             # Index of each element of batch_size
             # Create the indices array
-            inds = np.arange(nbatch)
+            update_sample_num = obs.shape[0]
+            print (update_sample_num)
+            inds = np.arange(update_sample_num)
             for epoch in range(noptepochs):
                 # Randomize the indexes
                 np.random.shuffle(inds)
                 # 0 to batch_size with batch_train_size step
-                for ii, start in enumerate(range(0, nbatch, nbatch_train)):
+                # the minibatch number is doubled if we use opponent data
+                for ii, start in enumerate(range(0, update_sample_num, nbatch_train)):
                     end = start + nbatch_train
                     mbinds = inds[start:end]
-                    slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs, rewards))
+                    slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs, rewards, weights))
                     temp_out = model.train(lrnow, cliprangenow, *slices)
                     writer.add_summary(temp_out[-1], (update - 1) * noptepochs * nminibatches + epoch * nminibatches + ii)
                     mblossvals.append(temp_out[:-1])
@@ -233,7 +288,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', eval_env=None,
             flatinds = np.arange(nenvs * nsteps).reshape(nenvs, nsteps)
             for epoch in range(noptepochs):
                 np.random.shuffle(envinds)
-                for ii, start in enumerate(range(0, nbatch, nbatch_train)):
+                for ii, start in enumerate(range(0, update_sample_num, nbatch_train)):
                     end = start + envsperbatch
                     mbenvinds = envinds[start:end]
                     mbflatinds = flatinds[mbenvinds].ravel()

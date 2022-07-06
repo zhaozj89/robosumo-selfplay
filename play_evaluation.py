@@ -1,4 +1,4 @@
-# python3 play_evaluation.py --label ours --path logs/RoboSumo-Ant-vs-Ant-v0-0 --min_version 1 --max_version 1 --trials 10 --interval 10
+# python3 play_evaluation.py --label random_env_32 --path log_random_1000M_env_32/RoboSumo-Ant-vs-Ant-v0-0 --min_version 1 --max_version 2000 --trials 50 --interval 10
 
 import tensorflow as tf
 import os.path as osp

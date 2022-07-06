@@ -58,6 +58,8 @@ class Model(object):
         self.LR = LR = tf.placeholder(tf.float32, [])
         # Cliprange
         self.CLIPRANGE = CLIPRANGE = tf.placeholder(tf.float32, [])
+        # importance sampling weight
+        self.IS_weight = IS_weight = tf.placeholder(tf.float32, [None])
 
         neglogpac = train_model.pd.neglogp(A)
 
@@ -88,7 +90,7 @@ class Model(object):
         pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
 
         # Final PG loss
-        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+        pg_loss = tf.reduce_mean(IS_weight * tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
 
@@ -157,7 +159,7 @@ class Model(object):
 
         sess.run(restores)
 
-    def train(self, lr, cliprange, obs, returns, masks, actions, values, neglogpacs, rewards, states=None):
+    def train(self, lr, cliprange, obs, returns, masks, actions, values, neglogpacs, rewards, IS_weight, states=None):
         # Here we calculate advantage A(s,a) = R + yV(s') - V(s)
         # Returns = R + yV(s')
         advs = returns - values
@@ -174,7 +176,8 @@ class Model(object):
             self.CLIPRANGE: cliprange,
             self.OLDNEGLOGPAC: neglogpacs,
             self.OLDVPRED: values,
-            self.REW: rewards
+            self.REW: rewards, 
+            self.IS_weight: IS_weight
         }
         if states is not None:
             td_map[self.train_model.S] = states

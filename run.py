@@ -117,6 +117,7 @@ def make_env_from_id(env_id, logger_dir, mpi_rank, subrank, seed, prefix):
 def build_env(args):
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
+    print ('args.num_env', args.num_env, ncpu)
     nenv = args.num_env or ncpu
     print('num of env: ' + str(nenv))
 
@@ -142,6 +143,7 @@ def train(args, extra_args):
     # assert args.env[:8] == 'RoboSumo'
 
     env_id = args.env
+    print (args)
 
     # build a temporary environment to get number of agents
     temp_env = gym.make(env_id)
@@ -187,6 +189,7 @@ def main(args):
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default="./logs", type=str)
     parser.add_argument('--suffix', help='', default="default", type=str)
 
+    # implicit args: opponent_mode use_opponent_data
     args, unknown_args = parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
 

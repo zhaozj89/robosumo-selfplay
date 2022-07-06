@@ -41,7 +41,12 @@ class Runner(AbstractEnvRunner):
 
     def run(self, update):
         # Here, we init the lists that will contain the mb of experiences
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
+        mb_obs = [[] for _ in range(self.nagent)]
+        mb_rewards = [[] for _ in range(self.nagent)]
+        mb_actions = [[] for _ in range(self.nagent)]
+        mb_values = [[] for _ in range(self.nagent)]
+        mb_dones = [[] for _ in range(self.nagent)]
+        mb_neglogpacs = [[] for _ in range(self.nagent)]
         # store opponent's observation and action to compute action probability
         opponent_obs, opponent_actions = [], []
 
@@ -56,12 +61,11 @@ class Runner(AbstractEnvRunner):
                 actions, values, self.states[agt], neglogpacs = self.models[agt].step(self.obs[:, agt, :],
                                                                                       S=self.states[agt],
                                                                                       M=self.dones[:, agt])
-                if agt == 0:
-                    mb_obs.append(self.obs[:, 0, :].copy())
-                    mb_actions.append(actions)
-                    mb_values.append(values)
-                    mb_neglogpacs.append(neglogpacs)
-                    mb_dones.append(self.dones[:, 0])
+                mb_obs[agt].append(self.obs[:, agt, :].copy())
+                mb_actions[agt].append(actions)
+                mb_values[agt].append(values)
+                mb_neglogpacs[agt].append(neglogpacs)
+                mb_dones[agt].append(self.dones[:, agt])
                 if agt == 1:
                     opponent_obs.append(self.obs[:, 1, :].copy())
                     opponent_actions.append(actions)
@@ -69,6 +73,8 @@ class Runner(AbstractEnvRunner):
             # Take actions in env and look the results
             # Infos contains a ton of useful informations
             all_actions = np.stack(all_actions, axis=1)
+            # obs shape: num_env * agent_num * ob dimension for each agent (120)
+            # `dones` and `infos` shape: num_env * agent_num
             self.obs[:], _, self.dones, infos = self.env.step(all_actions)
             """
             info:
@@ -88,21 +94,23 @@ class Runner(AbstractEnvRunner):
             alpha = 0
             if update <= self.anneal_bound:
                 alpha = np.linspace(1, 0, self.anneal_bound)[update - 1]
-            rewards = np.zeros(self.nenv)
-            for e in range(self.nenv):
-                rewards[e] = alpha * infos[e][0]['shaping_reward'] + (1 - alpha) * infos[e][0]['main_reward']
-                maybeepinfo = infos[e][0].get('episode')
-                if maybeepinfo:
-                    epinfos.append(maybeepinfo)
-            mb_rewards.append(rewards)
+            for agt in range(self.nagent):
+                rewards = np.zeros(self.nenv)
+                for e in range(self.nenv):
+                    rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
+                    if agt == 0:
+                        maybeepinfo = infos[e][0].get('episode')
+                        if maybeepinfo:
+                            epinfos.append(maybeepinfo)
+                mb_rewards[agt].append(rewards)
         # batch of steps to batch of rollouts
+        # shape: n_agents * time_step * num_env ?
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self.models[0].value(self.obs[:, 0, :], S=self.states[0], M=self.dones[:, 0])
 
         opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)
         opponent_actions = np.asarray(opponent_actions)
@@ -110,17 +118,20 @@ class Runner(AbstractEnvRunner):
         # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        for t in reversed(range(self.nsteps)):
-            if t == self.nsteps - 1:
-                nextnonterminal = 1.0 - self.dones[:, 0]
-                nextvalues = last_values
-            else:
-                nextnonterminal = 1.0 - mb_dones[t + 1]
-                nextvalues = mb_values[t + 1]
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-        mb_returns = mb_advs + mb_values
+        for agt in range(self.nagent):
+            lastgaelam = 0
+            last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+            for t in reversed(range(self.nsteps)):
+                if t == self.nsteps - 1:
+                    nextnonterminal = 1.0 - self.dones[:, agt]
+                    nextvalues = last_values
+                else:
+                    nextnonterminal = 1.0 - mb_dones[agt, t + 1]
+                    nextvalues = mb_values[agt, t + 1]
+                delta = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t]
+                mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+            mb_returns[agt] = mb_advs[agt] + mb_values[agt]
+        
         return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, opponent_obs, opponent_actions)),
                 mb_states[0], epinfos)
 
@@ -130,7 +141,7 @@ def sf01(arr):
     swap and then flatten axes 0 and 1
     """
     s = arr.shape
-    return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
+    return arr.swapaxes(1, 2).reshape(s[0], s[1] * s[2], *s[3:])
 
 
 def f0(arr):
