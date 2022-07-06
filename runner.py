@@ -47,6 +47,8 @@ class Runner(AbstractEnvRunner):
         mb_values = [[] for _ in range(self.nagent)]
         mb_dones = [[] for _ in range(self.nagent)]
         mb_neglogpacs = [[] for _ in range(self.nagent)]
+        # store the opponent's action probability to compute IS ratio
+        opponent_neglogpacs = []
         # store opponent's observation and action to compute action probability
         opponent_obs, opponent_actions = [], []
 
@@ -63,10 +65,18 @@ class Runner(AbstractEnvRunner):
                                                                                       M=self.dones[:, agt])
                 mb_obs[agt].append(self.obs[:, agt, :].copy())
                 mb_actions[agt].append(actions)
-                mb_values[agt].append(values)
-                mb_neglogpacs[agt].append(neglogpacs)
                 mb_dones[agt].append(self.dones[:, agt])
-                if agt == 1:
+                if agt == 0:
+                    mb_values[agt].append(values)
+                    mb_neglogpacs[agt].append(neglogpacs)
+                else:
+                    opponent_neglogpacs.append(neglogpacs)
+                    
+                    agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+                    agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], actions, return_neglogp=True)
+                    mb_values[agt].append(agent_values)
+                    mb_neglogpacs[agt].append(agent_neglogpacs)
+
                     opponent_obs.append(self.obs[:, 1, :].copy())
                     opponent_actions.append(actions)
                 all_actions.append(actions)
@@ -112,6 +122,7 @@ class Runner(AbstractEnvRunner):
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
 
+        opponent_neglogpacs = np.asarray(opponent_neglogpacs).ravel()
         opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)
         opponent_actions = np.asarray(opponent_actions)
 
@@ -120,7 +131,7 @@ class Runner(AbstractEnvRunner):
         mb_advs = np.zeros_like(mb_rewards)
         for agt in range(self.nagent):
             lastgaelam = 0
-            last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+            last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
             for t in reversed(range(self.nsteps)):
                 if t == self.nsteps - 1:
                     nextnonterminal = 1.0 - self.dones[:, agt]
@@ -128,12 +139,15 @@ class Runner(AbstractEnvRunner):
                 else:
                     nextnonterminal = 1.0 - mb_dones[agt, t + 1]
                     nextvalues = mb_values[agt, t + 1]
+                # delta = r + gamma * V(s') * (1 - done) - V(s)
                 delta = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t]
-                mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+                # For simplicity, don't use GAE for now
+                #mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+                mb_advs[agt, t] = delta
             mb_returns[agt] = mb_advs[agt] + mb_values[agt]
         
         return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, opponent_obs, opponent_actions)),
-                mb_states[0], epinfos)
+                mb_states[0], epinfos, opponent_neglogpacs)
 
 
 def sf01(arr):

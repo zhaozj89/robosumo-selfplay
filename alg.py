@@ -186,7 +186,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             #old_model_paths = [osp.join(checkdir, '%.5i' % old_id) for old_id in old_versions]
             old_model_paths = [osp.join(checkdir, f) for f in os.listdir(checkdir)]
             old_model_paths.sort()
-            assert(nagent==2, 'ONLY support two agents training')
+            #assert(nagent==2, 'ONLY support two agents training')
             if opponent_mode=='random':
                 idx = np.random.choice(update, 1)[0]
                 runner.models[1].load(old_model_paths[idx])
@@ -216,13 +216,13 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                 logger.info('Stepping environment...Compete with version %d' %(idx))
 
         # Get minibatch
-        obs, returns, masks, actions, values, neglogpacs, rewards, opponent_obs, opponent_actions, states, epinfos = runner.run(update)
+        obs, returns, masks, actions, values, neglogpacs, rewards, opponent_obs, opponent_actions, states, epinfos, opponent_neglogpacs = runner.run(update)
         if eval_env is not None:
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
             eval_states, eval_epinfos = eval_runner.run()
         
         # compute off-policy, off-env ratio
-        off_policy_ratio = np.exp(neglogpacs[1] - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
+        off_policy_ratio = np.exp(opponent_neglogpacs - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
         #off_policy_ratio = models[0].act_model.action_probability(obs[1], actions[1]) / np.exp(-neglogpacs[1])
         off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], actions[0], return_neglogp=True))
         #off_env_ratio = models[1].act_model.action_probability(obs[0], actions[0]) / np.exp(-neglogpacs[0])
@@ -267,7 +267,6 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             # Index of each element of batch_size
             # Create the indices array
             update_sample_num = obs.shape[0]
-            print (update_sample_num)
             inds = np.arange(update_sample_num)
             for epoch in range(noptepochs):
                 # Randomize the indexes
