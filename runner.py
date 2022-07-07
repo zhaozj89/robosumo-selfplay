@@ -122,7 +122,7 @@ class Runner(AbstractEnvRunner):
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
 
-        opponent_neglogpacs = np.asarray(opponent_neglogpacs).ravel()
+        opponent_neglogpacs = np.asarray(opponent_neglogpacs).swapaxes(0, 1).ravel()
         opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)
         opponent_actions = np.asarray(opponent_actions)
 

@@ -221,20 +221,34 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
             eval_states, eval_epinfos = eval_runner.run()
         
+        # transfer opponent data
+        clip_ratio = 5.
         # compute off-policy, off-env ratio
         off_policy_ratio = np.exp(opponent_neglogpacs - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
+        off_policy_clip_frac = (off_policy_ratio > clip_ratio).mean()
+        off_policy_ratio = np.clip(off_policy_ratio, 0., clip_ratio)
         #off_policy_ratio = models[0].act_model.action_probability(obs[1], actions[1]) / np.exp(-neglogpacs[1])
         off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], actions[0], return_neglogp=True))
+        off_env_clip_frac = (off_env_ratio > clip_ratio).mean()
+        off_env_ratio = np.clip(off_env_ratio, 0., clip_ratio)
         #off_env_ratio = models[1].act_model.action_probability(obs[0], actions[0]) / np.exp(-neglogpacs[0])
         total_ratio = off_policy_ratio * off_env_ratio
+        total_clip_frac = (total_ratio > clip_ratio).mean()
+        total_ratio = np.clip(total_ratio, 0., clip_ratio)
 
         plt.figure(figsize=(16, 9))
         plt.subplot(1, 3, 1)
         plt.hist(off_policy_ratio)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('fraction of ratio clipped: {}'.format(off_policy_clip_frac))
         plt.subplot(1, 3, 2)
         plt.hist(off_env_ratio)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('fraction of ratio clipped: {}'.format(off_env_clip_frac))
         plt.subplot(1, 3, 3)
         plt.hist(total_ratio)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('fraction of ratio clipped: {}'.format(total_clip_frac))
         os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
         plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
 
