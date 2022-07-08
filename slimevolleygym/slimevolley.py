@@ -720,9 +720,9 @@ class SlimeVolleyEnv(gym.Env):
 
     #self.action_space = spaces.Box(0, 1.0, shape=(3,))
     if self.atari_mode:
-      self.action_space = [spaces.Discrete(6)]
+      self.action_space = [spaces.Discrete(6), spaces.Discrete(6)]
     else:
-      self.action_space = [spaces.MultiBinary(3)]
+      self.action_space = [spaces.MultiBinary(3), spaces.MultiBinary(3)]
 
     if self.from_pixels:
       setPixelObsMode()
@@ -730,7 +730,7 @@ class SlimeVolleyEnv(gym.Env):
         shape=(PIXEL_HEIGHT, PIXEL_WIDTH, 3), dtype=np.uint8)
     else:
       high = np.array([np.finfo(np.float32).max] * 12)
-      self.observation_space = [spaces.Box(-high, high)]
+      self.observation_space = [spaces.Box(-high, high), spaces.Box(-high, high)]
     self.canvas = None
     self.previous_rgbarray = None
 

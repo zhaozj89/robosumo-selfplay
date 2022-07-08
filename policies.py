@@ -54,7 +54,11 @@ class PolicyWithValue(object):
 
         # Calculate the neg log of our probability
         self.neglogp = self.pd.neglogp(self.action)
-        self.p_mean, self.p_std = self.pd.mean, self.pd.std
+
+        # compute the neg log of a given action's probability
+        self.given_action = self.pdtype.sample_placeholder([None])
+        self.given_action_neglogp = self.pd.neglogp(self.given_action)
+
         self.sess = sess or tf.get_default_session()
 
         if estimate_q:
@@ -97,16 +101,8 @@ class PolicyWithValue(object):
             state = None
         return a, v, state, neglogp
 
-    def action_probability(self, observation, action, return_neglogp=False):
-        p_mean, p_std = self._evaluate([self.p_mean, self.p_std], observation)
-        neglogp = 0.5 * np.square((action - p_mean) / p_std).sum(axis=-1) \
-               + 0.5 * np.log(2.0 * np.pi) * action.shape[-1] \
-               + np.log(p_std).sum(axis=-1)
-        if return_neglogp:
-            return neglogp
-        else:
-            ret = np.exp(-neglogp).reshape(-1, 1)
-            return ret
+    def action_probability(self, observation, **extra_feed):
+        return self._evaluate(self.given_action_neglogp, observation, **extra_feed)
 
     def value(self, ob, *args, **kwargs):
         """

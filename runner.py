@@ -9,7 +9,7 @@ class AbstractEnvRunner(ABC):
         self.models = models
         self.nenv = nenv = self.env.num_envs
         self.nagent = nagent
-        self.obs = np.zeros((nenv,) + (len(env.observation_space.spaces),) + env.observation_space.spaces[0].shape,
+        self.obs = np.zeros((nenv,) + (len(env.observation_space),) + env.observation_space[0].shape,
                             dtype=models[0].train_model.X.dtype.name)
         self.obs[:] = env.reset()
         self.nsteps = nsteps
@@ -73,7 +73,7 @@ class Runner(AbstractEnvRunner):
                     opponent_neglogpacs.append(neglogpacs)
                     
                     agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
-                    agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], actions, return_neglogp=True)
+                    agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], given_action=actions)
                     mb_values[agt].append(agent_values)
                     mb_neglogpacs[agt].append(agent_neglogpacs)
 
@@ -118,11 +118,12 @@ class Runner(AbstractEnvRunner):
                     mb_rewards[agt].append(rewards)
             else:
                 for agt in range(self.nagent):
-                    mb_rewards[agt].append(rewards[agt])
+                    mb_rewards[agt].append(rewards[:, agt])
                     if agt == 0:
-                        maybeepinfo = infos[e][0].get('episode')
-                        if maybeepinfo:
-                            epinfos.append(maybeepinfo)
+                        for e in range(self.nenv):
+                            maybeepinfo = infos[e][0].get('episode')
+                            if maybeepinfo:
+                                epinfos.append(maybeepinfo)
         # batch of steps to batch of rollouts
         # shape: n_agents * time_step * num_env ?
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -131,6 +132,7 @@ class Runner(AbstractEnvRunner):
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        #print (mb_obs.shape, mb_rewards.shape, mb_actions.shape, mb_values.shape, mb_neglogpacs.shape, mb_dones.shape)
 
         opponent_neglogpacs = np.asarray(opponent_neglogpacs).swapaxes(0, 1).ravel()
         opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)

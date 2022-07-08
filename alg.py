@@ -237,16 +237,16 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         if eval_env is not None:
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_rewards, _, _, \
             eval_states, eval_epinfos = eval_runner.run()
-        
+
         # transfer opponent data
         clip_ratio = 5.
         # compute off-policy, off-env ratio
-        off_policy_ratio = np.exp(opponent_neglogpacs - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
+        off_policy_ratio = np.exp(opponent_neglogpacs - models[0].act_model.action_probability(obs[1], given_action=actions[1]))
         off_policy_clip_frac = (off_policy_ratio > clip_ratio).mean()
         off_policy_ratio = np.clip(off_policy_ratio, 0., clip_ratio)
         off_policy_ratio[np.isnan(off_policy_ratio)] = clip_ratio
         #off_policy_ratio = models[0].act_model.action_probability(obs[1], actions[1]) / np.exp(-neglogpacs[1])
-        off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], actions[0], return_neglogp=True))
+        off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], given_action=actions[0]))
         off_env_clip_frac = (off_env_ratio > clip_ratio).mean()
         off_env_ratio = np.clip(off_env_ratio, 0., clip_ratio)
         off_env_ratio[np.isnan(off_env_ratio)] = clip_ratio
