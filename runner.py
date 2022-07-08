@@ -83,9 +83,11 @@ class Runner(AbstractEnvRunner):
             # Take actions in env and look the results
             # Infos contains a ton of useful informations
             all_actions = np.stack(all_actions, axis=1)
+            # all_actions shape: num_env * nagents * action_dim
             # obs shape: num_env * agent_num * ob dimension for each agent (120)
             # `dones` and `infos` shape: num_env * agent_num
-            self.obs[:], _, self.dones, infos = self.env.step(all_actions)
+            self.obs[:], rewards, self.dones, infos = self.env.step(all_actions)
+            #print (self.obs.shape, self.dones.shape, len(infos), len(infos[0]))
             """
             info:
                 shaping_reward:
@@ -101,18 +103,26 @@ class Runner(AbstractEnvRunner):
 
             """
             # exploration curriculum: r_t = alpha * shaping_reward + (1 - alpha) * done * main_reward
-            alpha = 0
-            if update <= self.anneal_bound:
-                alpha = np.linspace(1, 0, self.anneal_bound)[update - 1]
-            for agt in range(self.nagent):
-                rewards = np.zeros(self.nenv)
-                for e in range(self.nenv):
-                    rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
+            if 'shaping_reward' in infos[0][0]:
+                alpha = 0
+                if update <= self.anneal_bound:
+                    alpha = np.linspace(1, 0, self.anneal_bound)[update - 1]
+                for agt in range(self.nagent):
+                    rewards = np.zeros(self.nenv)
+                    for e in range(self.nenv):
+                        rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
+                        if agt == 0:
+                            maybeepinfo = infos[e][0].get('episode')
+                            if maybeepinfo:
+                                epinfos.append(maybeepinfo)
+                    mb_rewards[agt].append(rewards)
+            else:
+                for agt in range(self.nagent):
+                    mb_rewards[agt].append(rewards[agt])
                     if agt == 0:
                         maybeepinfo = infos[e][0].get('episode')
                         if maybeepinfo:
                             epinfos.append(maybeepinfo)
-                mb_rewards[agt].append(rewards)
         # batch of steps to batch of rollouts
         # shape: n_agents * time_step * num_env ?
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
