@@ -79,7 +79,7 @@ class Model(object):
         # Clipped value
         vf_losses2 = tf.square(vpredclipped - R)
 
-        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
+        vf_loss = .5 * tf.reduce_mean(IS_weight * tf.maximum(vf_losses1, vf_losses2))
 
         # Calculate ratio (pi current policy / pi old policy)
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)

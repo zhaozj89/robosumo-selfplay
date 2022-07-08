@@ -128,6 +128,23 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                         nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm, trainable=False,
                         model_scope='model_util')
 
+    # plot the weights distribution in checkpoint models
+    '''
+    for update in range(180, 200, 1):
+        model_util.load(osp.join(checkdir, '%.5i'%update))
+        variables = tf.trainable_variables(scope=model_util.scope)
+        sess = model_util.sess
+        ps = sess.run(variables)
+        ps = np.concatenate([x.ravel() for x in ps])
+        print (ps)
+        print (np.isnan(ps).sum())
+        plt.figure()
+        plt.hist(ps, bins=100)
+        plt.savefig(osp.join(logger.get_dir(), 'fig', 'weight_%d.png' %(update)))
+        plt.close()
+    return model, env
+    '''
+
     if load_path is not None:
         for i in range(nagent):
             models[i].load(load_path)
@@ -227,14 +244,17 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         off_policy_ratio = np.exp(opponent_neglogpacs - models[0].act_model.action_probability(obs[1], actions[1], return_neglogp=True))
         off_policy_clip_frac = (off_policy_ratio > clip_ratio).mean()
         off_policy_ratio = np.clip(off_policy_ratio, 0., clip_ratio)
+        off_policy_ratio[np.isnan(off_policy_ratio)] = clip_ratio
         #off_policy_ratio = models[0].act_model.action_probability(obs[1], actions[1]) / np.exp(-neglogpacs[1])
         off_env_ratio = np.exp(neglogpacs[0] - models[1].act_model.action_probability(obs[0], actions[0], return_neglogp=True))
         off_env_clip_frac = (off_env_ratio > clip_ratio).mean()
         off_env_ratio = np.clip(off_env_ratio, 0., clip_ratio)
+        off_env_ratio[np.isnan(off_env_ratio)] = clip_ratio
         #off_env_ratio = models[1].act_model.action_probability(obs[0], actions[0]) / np.exp(-neglogpacs[0])
         total_ratio = off_policy_ratio * off_env_ratio
         total_clip_frac = (total_ratio > clip_ratio).mean()
         total_ratio = np.clip(total_ratio, 0., clip_ratio)
+        total_ratio[np.isnan(total_ratio)] = clip_ratio
 
         plt.figure(figsize=(16, 9))
         plt.subplot(1, 3, 1)
