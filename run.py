@@ -156,7 +156,7 @@ def train(args, extra_args):
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
 
-    alg_kwargs = get_default_params()
+    alg_kwargs = get_default_params(env_id)
     alg_kwargs.update(extra_args)
 
     env = build_env(args)

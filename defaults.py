@@ -1,20 +1,38 @@
 import tensorflow as tf
 
 
-def get_default_params():
-    return dict(
-        nsteps=8192, #     nbatch = nenvs * nsteps
-        nminibatches=32, #     nbatch_train = nbatch // nminibatches,     nupdates = total_timesteps//nbatch
-        lam=0.95,
-        gamma=0.995,
-        noptepochs=6,
-        log_interval=1,
-        save_interval=1,
-        ent_coef=0.0,
-        lr=1e-3,
-        cliprange=0.2,
-        value_network='copy',
-        anneal_bound=1000,
-        num_hidden=64,
-        activation=tf.nn.relu,
-    )
+def get_default_params(task):
+    if 'RoboSumo' in task:
+        return dict(
+            nsteps=8192, #     nbatch = nenvs * nsteps
+            nminibatches=32, #     nbatch_train = nbatch // nminibatches,     nupdates = total_timesteps//nbatch
+            lam=0.95,
+            gamma=0.995,
+            noptepochs=6,
+            log_interval=1,
+            save_interval=1,
+            ent_coef=0.0,
+            lr=1e-3,
+            cliprange=0.2,
+            value_network='copy',
+            anneal_bound=1000,
+            num_hidden=64,
+            activation=tf.nn.relu,
+        )
+    elif 'SlimeVolley' in task:
+        return dict(
+            nsteps=4096, #     nbatch = nenvs * nsteps
+            nminibatches=64, #     nbatch_train = nbatch // nminibatches,     nupdates = total_timesteps//nbatch
+            lam=0.95,
+            gamma=0.99,
+            noptepochs=10,
+            log_interval=1,
+            save_interval=1,
+            ent_coef=0.0,
+            lr=3e-4,
+            cliprange=0.2,
+            value_network='copy', 
+            num_hidden=64, 
+            activation=tf.nn.relu,
+        )
+    
