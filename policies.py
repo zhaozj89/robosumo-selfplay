@@ -51,6 +51,7 @@ class PolicyWithValue(object):
 
         # Take an action
         self.action = self.pd.sample()
+        self.deterministic_action = self.pd.mode()
 
         # Calculate the neg log of our probability
         self.neglogp = self.pd.neglogp(self.action)
@@ -80,7 +81,7 @@ class PolicyWithValue(object):
 
         return sess.run(variables, feed_dict)
 
-    def step(self, observation, **extra_feed):
+    def step(self, observation, deterministic=False, **extra_feed):
         """
         Compute next action(s) given the observation(s)
 
@@ -95,8 +96,10 @@ class PolicyWithValue(object):
         -------
         (action, value estimate, next state, negative log likelihood of the action under current policy parameters) tuple
         """
-
-        a, v, state, neglogp = self._evaluate([self.action, self.vf, self.state, self.neglogp], observation, **extra_feed)
+        if deterministic:
+            a, v, state, neglogp = self._evaluate([self.deterministic_action, self.vf, self.state, self.neglogp], observation, **extra_feed)
+        else:
+            a, v, state, neglogp = self._evaluate([self.action, self.vf, self.state, self.neglogp], observation, **extra_feed)
         if state.size == 0:
             state = None
         return a, v, state, neglogp
