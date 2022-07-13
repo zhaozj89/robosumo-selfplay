@@ -528,7 +528,7 @@ class BaselinePolicy:
     self._setInputState(obs)
     self._forward()
     return self._getAction()
-  def step(self, obs, S=None, M=None):
+  def step(self, obs):
     return self.predict(obs)
 
 class Game:
