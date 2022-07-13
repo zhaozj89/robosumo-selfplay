@@ -1,4 +1,4 @@
-# python3 plot.py --type eval_against_fix
+# python3 plot.py --type eval_against_fix --opponent_mode random
 from baselines.common import plot_util as pu
 import matplotlib
 matplotlib.use('agg')
@@ -7,10 +7,12 @@ import numpy as np
 import pandas as pd
 import argparse
 import pickle
+import os
 
 
 parser = argparse.ArgumentParser(description='Evaluate pre-trained agents against each other.')
 parser.add_argument('--type', help='figure to draw', type=str)
+parser.add_argument('--opponent_mode', type=str)
 args = parser.parse_args()
 
 if args.type == 'train_reward':
@@ -38,14 +40,57 @@ if args.type == 'train_reward':
 
 if args.type == 'eval_against_fix':
 
-    labels = ['random_env_64', 'random_env_64_direct', 'random_env_64_op', 'random_env_64_both']
+    #labels = ['random_env_64', 'random_env_64_direct', 'random_env_64_op', 'random_env_64_both']
+    #labels = ['random_env_64', 'random_env_32', 'random_env_16']
+    '''
+    labels = ['volleyball_random_env_8', 'volleyball_random_env_8_both']
     plt.figure()
     for label in labels:
         win_rate = pd.read_csv('eval_against_fix_%s.csv' %(label))
         plt.plot(win_rate, label=label)
+        if label == 'random_env_64_50_20':
+            plt.plot([i * 20 for i in range(win_rate.shape[0])], win_rate, label=label)
+        else:
+            plt.plot([i * 10 for i in range(win_rate.shape[0])], win_rate, label=label)
         #plt.plot([int(label.split('_')[-1]) * (50 * i) * 8196 for i in range(len(win_rate))], win_rate, label=label)
     plt.legend()
     plt.savefig('eval_against_fix.png')
+    plt.close()
+    '''
+    opponent_mode = args.opponent_mode
+    plt.figure()
+    '''
+    result_without_GAE = None
+    for seed in [0, 1, 2]:
+        path = f'log_volleyball/log_{opponent_mode}_100M_env_8/SlimeVolley-v0-{seed}/eval_against_fix.pkl'
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                result = pickle.load(f)
+            result.sort(key=lambda x: x[0])
+            if result_without_GAE is None:
+                result_without_GAE = np.array([x[1] for x in result])
+            else:
+                result_without_GAE = result_without_GAE + np.array([x[1] for x in result])
+    plt.plot([x[0] for x in result], result_without_GAE / 3, label='without GAE', c='r')
+    '''
+    methods = ['baseline', 'OP+OE', 'OP', 'direct']
+    for i, suffix in enumerate(['', '_both', '_op', '_direct']):
+        result_with_GAE = None
+        for seed in [0, 1, 2]:
+            path = f'log_volleyball/log_{opponent_mode}_100M_env_8_GAE{suffix}/SlimeVolley-v0-{seed}/eval_against_fix.pkl'
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    result = pickle.load(f)
+                result.sort(key=lambda x: x[0])
+                if result_with_GAE is None:
+                    result_with_GAE = np.array([x[1] for x in result])
+                    xticks = np.array([x[0] for x in result])
+                else:
+                    new_result = np.array([x[1] for x in result])
+                    result_with_GAE[:len(new_result)] = result_with_GAE[:len(new_result)] + new_result
+        plt.plot(xticks, result_with_GAE / 3, label=methods[i])
+    plt.legend()
+    plt.savefig(f'eval_against_fix_{opponent_mode}.png')
     plt.close()
 
 if args.type == 'compare_history_version':

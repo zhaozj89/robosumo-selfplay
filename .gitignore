@@ -8,5 +8,7 @@ logs
 *.csv
 *.ckpt
 
-*logs*/
+*log*/
 video*/
+test/
+*.pyc
