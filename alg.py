@@ -86,6 +86,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
     '''
 
     set_global_seeds(seed)
+    print ('grad norm', max_grad_norm)
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -272,21 +273,29 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
         plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
 
+        logger.info('neglogp statistics check: max, min, inf, nan')
+        logger.info(f'{neglogpacs[1].max()}, {neglogpacs[1].min()}, {np.isinf(neglogpacs[1]).sum()}, {np.isnan(neglogpacs[1]).sum()}')
+        logger.info('opponent data value function check: max, min')
+        logger.info(f'{values[1].max()}, {values[1].min()}')
+        neglogp_threshold = 500.
+        usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
+        print (usable_index.shape[0], neglogpacs[1].shape)
+
         if use_opponent_data is None:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
                 list(map(lambda x: x[0], (obs, returns, masks, actions, values, neglogpacs, rewards)))
         else:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
-                list(map(lambda x: np.concatenate([x[i] for i in range(2)], axis=0), (obs, returns, masks, actions, values, neglogpacs, rewards)))
+                list(map(lambda x: np.concatenate([x[0], x[1, usable_index]], axis=0), (obs, returns, masks, actions, values, neglogpacs, rewards)))
 
         if use_opponent_data is None:
             weights = np.ones(nbatch, dtype=np.float32)
         elif use_opponent_data == 'direct':
-            weights = np.ones(2 * nbatch, dtype=np.float32)
+            weights = np.ones(obs.shape[0], dtype=np.float32)
         elif use_opponent_data == 'off_policy':
-            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), off_policy_ratio])
+            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), off_policy_ratio[usable_index]])
         elif use_opponent_data == 'both':
-            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), total_ratio])
+            weights = np.concatenate([np.ones(nbatch, dtype=np.float32), total_ratio[usable_index]])
 
         if update % log_interval == 0:
             logger.info('Done.')
@@ -302,6 +311,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             # Create the indices array
             update_sample_num = obs.shape[0]
             inds = np.arange(update_sample_num)
+
             for epoch in range(noptepochs):
                 # Randomize the indexes
                 np.random.shuffle(inds)

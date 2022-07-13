@@ -104,6 +104,9 @@ class PolicyWithValue(object):
             state = None
         return a, v, state, neglogp
 
+    def value_and_neglogp(self, observation, **extra_feed):
+        return self._evaluate([self.vf, self.given_action_neglogp], observation, **extra_feed)
+
     def action_probability(self, observation, **extra_feed):
         return self._evaluate(self.given_action_neglogp, observation, **extra_feed)
 

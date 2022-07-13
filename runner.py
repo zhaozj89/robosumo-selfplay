@@ -72,8 +72,9 @@ class Runner(AbstractEnvRunner):
                 else:
                     opponent_neglogpacs.append(neglogpacs)
                     
-                    agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
-                    agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], given_action=actions)
+                    #agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+                    #agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], given_action=actions)
+                    agent_values, agent_neglogpacs = self.models[0].act_model.value_and_neglogp(self.obs[:, agt, :], given_action=actions)
                     mb_values[agt].append(agent_values)
                     mb_neglogpacs[agt].append(agent_neglogpacs)
 
@@ -141,6 +142,7 @@ class Runner(AbstractEnvRunner):
         # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
+        #mb_advs_vanilla = np.zeros_like(mb_rewards)
         for agt in range(self.nagent):
             lastgaelam = 0
             last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
@@ -154,8 +156,8 @@ class Runner(AbstractEnvRunner):
                 # delta = r + gamma * V(s') * (1 - done) - V(s)
                 delta = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t]
                 # For simplicity, don't use GAE for now
-                #mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-                mb_advs[agt, t] = delta
+                mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+                #mb_advs_vanilla[agt, t] = delta
             mb_returns[agt] = mb_advs[agt] + mb_values[agt]
         
         return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, opponent_obs, opponent_actions)),

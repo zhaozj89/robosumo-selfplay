@@ -74,6 +74,7 @@ def make_env_from_id(env_id, logger_dir, mpi_rank, subrank, seed, prefix):
     env = gym.make(env_id)
     if 'RoboSumo' in env_id:
         env = SumoEnv(env, allow_early_resets=True, file_prefix=prefix)
+    print (seed)
     env.seed(seed)
     env = Monitor(env, logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)), allow_early_resets=True)
     return env
@@ -137,7 +138,7 @@ def build_env(args):
     # env = make_vec_env(env_id, nenv, seed)
     # env = VecFrameStack(env, frame_stack_size)
 
-    env = SubprocVecEnv([lambda: make_env_from_id(env_id, args.log_path, 0, i, seed + i if seed is not None else None, "")
+    env = SubprocVecEnv([lambda i=i: make_env_from_id(env_id, args.log_path, 0, i, seed + i if seed is not None else None, "")
                          for i in range(nenv)])
     return env
 
@@ -208,8 +209,8 @@ def main(args):
     #     save_path = osp.expanduser(args.save_path)
     # else:
     #     save_path = osp.join(args.save_path, 'model')
-    print('Saving final model to', 'model')
-    model.save('model.ckpt')
+    #print('Saving final model to', 'model')
+    #model.save('model.ckpt')
 
     env.close()
     return model
