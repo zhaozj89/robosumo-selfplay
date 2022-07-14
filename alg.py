@@ -258,24 +258,33 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         total_ratio = np.clip(total_ratio, 0., clip_ratio)
         total_ratio[np.isnan(total_ratio)] = clip_ratio
 
+        # discard the opponent samples where the action probability is too low
+        neglogp_threshold = 50.
+        usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
+        logger.info(f'use {usable_index.shape[0]} of {neglogpacs[1].shape[0]} opponent samples')
+
         # plot ratios for visualization
         plt.figure(figsize=(16, 9))
         plt.subplot(2, 2, 1)
-        plt.hist(np.log(off_policy_ratio), bins=100)
+        plt.hist(np.clip(np.log(off_policy_ratio), -5., 5.), bins=100)
         plt.ticklabel_format(useOffset=False)
         plt.title('off-policy ratio (log scale): %.2f%% clipped' %(off_policy_clip_frac * 100.))
         plt.subplot(2, 2, 2)
-        plt.hist(np.log(off_env_ratio), bins=100)
+        plt.hist(np.clip(np.log(off_env_ratio), -5., 5.), bins=100)
         plt.ticklabel_format(useOffset=False)
         plt.title('off-env ratio (log scale): %.2f%% clipped' %(off_env_clip_frac * 100.))
         plt.subplot(2, 2, 3)
-        plt.hist(np.log(total_ratio), bins=100)
+        plt.hist(np.clip(np.log(total_ratio), -5., 5.), bins=100)
         plt.ticklabel_format(useOffset=False)
         plt.title('off-policy-env ratio (log scale): %.2f%% clipped' %(total_clip_frac * 100.))
         plt.subplot(2, 2, 4)
-        plt.hist(neglogpacs[1].ravel(), bins=100)
+        plt.hist(np.clip(neglogpacs[1].ravel(), -neglogp_threshold, neglogp_threshold), bins=100)
         plt.ticklabel_format(useOffset=False)
         plt.title('-neglogp of \pi_1(a^2|o^2)')
+        if update == 1:
+            plt.suptitle('opponent version: 0')
+        else:
+            plt.suptitle(f'opponent version: {idx}')
         os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
         plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
 
@@ -283,11 +292,6 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         logger.info(f'{neglogpacs[1].max()}, {neglogpacs[1].min()}, {np.isinf(neglogpacs[1]).sum()}, {np.isnan(neglogpacs[1]).sum()}')
         logger.info('opponent data value function check: max, min')
         logger.info(f'{values[1].max()}, {values[1].min()}')
-
-        # discard the opponent samples where the action probability is too low
-        neglogp_threshold = 50.
-        usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
-        logger.info(f'use {usable_index.shape[0]} of {neglogpacs[1].shape[0]} opponent samples')
 
         if use_opponent_data is None:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
