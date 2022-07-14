@@ -64,7 +64,6 @@ if __name__ == '__main__':
     # total_scores = [0, 0]
     dones = [False, False]
     reward = None
-    s_win_rate = []
 
     # make an environment
     env_id = 'RoboSumo-Ant-vs-Ant-v0'
@@ -93,6 +92,15 @@ if __name__ == '__main__':
     opponent_params = load_params(opponent_dir)
     set_from_flat(opponent_policy.get_variables(), opponent_params)
 
+    # load existing evaluation results
+    try:
+        with open(os.path.join(path, 'eval_against_fix.pkl'), 'wb') as f:
+            s_win_rate = pickle.load(f)
+        evaluated_id = [x[0] for x in s_win_rate]
+    except:
+        s_win_rate = []
+        evaluated_id = []
+
     obs = env.reset()
     not_done = np.ones(num_env)
     win_rate, draw_rate, lose_rate = 0, 0, 0
@@ -119,7 +127,10 @@ if __name__ == '__main__':
             s_win_rate.append([current_id, win_rate / num_env, draw_rate / num_env, lose_rate / num_env])
             win_rate, draw_rate, lose_rate = 0, 0, 0
 
-            current_id += args.interval
+            while (1):
+                current_id += args.interval
+                if current_id not in evaluated_id:
+                    break
             if current_id>ID_length:
                 break
             model_path = path + '/checkpoints/%.5i' % current_id
