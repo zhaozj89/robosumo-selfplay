@@ -115,6 +115,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
     model = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=None, nbatch_train=nbatch_train,
                      nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm,
                      model_scope='model_%d' % 0)
+
     models = [model]
     checkdir = osp.join(logger.get_dir(), 'checkpoints')
     model.save(osp.join(checkdir, '00000'))
@@ -257,19 +258,24 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         total_ratio = np.clip(total_ratio, 0., clip_ratio)
         total_ratio[np.isnan(total_ratio)] = clip_ratio
 
+        # plot ratios for visualization
         plt.figure(figsize=(16, 9))
-        plt.subplot(1, 3, 1)
-        plt.hist(off_policy_ratio)
+        plt.subplot(2, 2, 1)
+        plt.hist(np.log(off_policy_ratio), bins=100)
         plt.ticklabel_format(useOffset=False)
-        plt.title('fraction of ratio clipped: {}'.format(off_policy_clip_frac))
-        plt.subplot(1, 3, 2)
-        plt.hist(off_env_ratio)
+        plt.title('off-policy ratio (log scale): %.2f%% clipped' %(off_policy_clip_frac * 100.))
+        plt.subplot(2, 2, 2)
+        plt.hist(np.log(off_env_ratio), bins=100)
         plt.ticklabel_format(useOffset=False)
-        plt.title('fraction of ratio clipped: {}'.format(off_env_clip_frac))
-        plt.subplot(1, 3, 3)
-        plt.hist(total_ratio)
+        plt.title('off-env ratio (log scale): %.2f%% clipped' %(off_env_clip_frac * 100.))
+        plt.subplot(2, 2, 3)
+        plt.hist(np.log(total_ratio), bins=100)
         plt.ticklabel_format(useOffset=False)
-        plt.title('fraction of ratio clipped: {}'.format(total_clip_frac))
+        plt.title('off-policy-env ratio (log scale): %.2f%% clipped' %(total_clip_frac * 100.))
+        plt.subplot(2, 2, 4)
+        plt.hist(neglogpacs[1].ravel(), bins=100)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('-neglogp of \pi_1(a^2|o^2)')
         os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
         plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
 
@@ -277,9 +283,11 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         logger.info(f'{neglogpacs[1].max()}, {neglogpacs[1].min()}, {np.isinf(neglogpacs[1]).sum()}, {np.isnan(neglogpacs[1]).sum()}')
         logger.info('opponent data value function check: max, min')
         logger.info(f'{values[1].max()}, {values[1].min()}')
-        neglogp_threshold = 500.
+
+        # discard the opponent samples where the action probability is too low
+        neglogp_threshold = 50.
         usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
-        print (usable_index.shape[0], neglogpacs[1].shape)
+        logger.info(f'use {usable_index.shape[0]} of {neglogpacs[1].shape[0]} opponent samples')
 
         if use_opponent_data is None:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
@@ -323,6 +331,8 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs, rewards, weights))
                     temp_out = model.train(lrnow, cliprangenow, *slices)
                     writer.add_summary(temp_out[-1], (update - 1) * noptepochs * nminibatches + epoch * nminibatches + ii)
+                    #for i in range(5):
+                    #    logger.info(f'{model.loss_names[i]}: {temp_out[i].mean()}')
                     mblossvals.append(temp_out[:-1])
         else: # recurrent version
             assert nenvs % nminibatches == 0

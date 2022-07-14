@@ -73,15 +73,15 @@ class Model(object):
         # Clip the value to reduce variability during Critic training
         # Get the predicted value
         vpred = train_model.vf
-        vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        #vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
         # Unclipped value
         vf_losses1 = tf.square(vpred - R)
         # Clipped value
-        vf_losses2 = tf.square(vpredclipped - R)
+        #vf_losses2 = tf.square(vpredclipped - R)
 
-        vf_loss = .5 * tf.reduce_mean(IS_weight * tf.maximum(vf_losses1, vf_losses2))
+        #vf_loss = .5 * tf.reduce_mean(IS_weight * tf.maximum(vf_losses1, vf_losses2))
 
-        #vf_loss = .5 * tf.reduce_mean(IS_weight * vf_losses1)
+        vf_loss = .5 * tf.reduce_mean(IS_weight * vf_losses1)
 
         # Calculate ratio (pi current policy / pi old policy)
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
