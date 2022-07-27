@@ -16,8 +16,8 @@ import pickle
 
 from subproc_vec_env import SubprocVecEnv
 
-from model import Model
-model_fn = Model
+from model import PPOModel
+model_fn = PPOModel
 
 import argparse
 from baselines.common.tf_util import get_session
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     # configure
     path = args.path
     ID_length = min(len(list(os.listdir(path + '/checkpoints'))), args.max_version) - 1
-    current_id = max(1, args.min_version)
+    current_id = max(0, args.min_version)
     round_total = args.trials
     num_env = round_total
     env_id = 'SlimeVolley-v0'
@@ -109,7 +109,10 @@ if __name__ == '__main__':
             if current_id > ID_length:
                 break
             model_path = path + '/checkpoints/%.5i' % current_id
-            model.load(model_path)
+            try:
+                model.load(model_path)
+            except:
+                break
             not_done = np.ones(num_env)
             obs = env.reset()
             for op in opponent_policy:

@@ -3,6 +3,7 @@ import datetime
 import sys
 import robosumo
 import os
+import pickle
 try:
     from mpi4py import MPI
 except ImportError:
@@ -12,7 +13,6 @@ import multiprocessing
 import os.path as osp
 import tensorflow as tf
 from baselines import logger
-from alg import learn
 from defaults import get_default_params
 from sumo_env import SumoEnv
 from subproc_vec_env import SubprocVecEnv
@@ -73,10 +73,13 @@ def configure_logger(log_path, **kwargs):
 def make_env_from_id(env_id, logger_dir, mpi_rank, subrank, seed, prefix):
     env = gym.make(env_id)
     if 'RoboSumo' in env_id:
+        for agent in env.agents:
+            agent._adjust_z = -0.5
         env = SumoEnv(env, allow_early_resets=True, file_prefix=prefix)
     print (seed)
     env.seed(seed)
     env = Monitor(env, logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)), allow_early_resets=True)
+    print (env)
     return env
 
 # def make_vec_env(env_id, num_env, seed,
@@ -147,6 +150,7 @@ def train(args, extra_args):
     # assert args.env[:8] == 'RoboSumo'
 
     env_id = args.env
+    pg_method = args.pg
     print (args)
 
     # build a temporary environment to get number of agents
@@ -157,7 +161,7 @@ def train(args, extra_args):
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
 
-    alg_kwargs = get_default_params(env_id)
+    alg_kwargs = get_default_params(env_id, pg_method)
     alg_kwargs.update(extra_args)
 
     env = build_env(args)
@@ -169,6 +173,13 @@ def train(args, extra_args):
             alg_kwargs['network'] = 'mlp'
 
     print('Training PPO2 on {} with arguments \n{}'.format(env_id, alg_kwargs))
+    with open(os.path.join(args.log_path, 'config.pkl'), 'wb') as f:
+        pickle.dump([args, alg_kwargs], f)
+
+    if pg_method == 'ppo':
+        from alg import learn
+    else:
+        from alg_ac import learn
 
     model = learn(
         env=env,
@@ -192,6 +203,7 @@ def main(args):
     parser.add_argument('--save_path', help='Path to save trained model to', default=".", type=str)
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default="./logs", type=str)
     parser.add_argument('--suffix', help='', default="default", type=str)
+    parser.add_argument('--pg', type=str, default='ppo')
 
     # implicit args: opponent_mode use_opponent_data
     args, unknown_args = parser.parse_known_args(args)
@@ -201,6 +213,7 @@ def main(args):
         # args.log_path = osp.join(args.log_path,
         #                          args.env + '-' + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f"))
         args.log_path = osp.join(args.log_path, args.env + '-' + args.suffix)
+    os.system('rm -r %s'%(args.log_path))
     configure_logger(args.log_path, format_strs=[])
 
     model, env = train(args, extra_args)

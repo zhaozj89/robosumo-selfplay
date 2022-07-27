@@ -13,12 +13,13 @@ from robosumo.policy_zoo import LSTMPolicy, MLPPolicy
 from robosumo.policy_zoo.utils import load_params, set_from_flat
 from baselines.common.tf_util import get_session
 
-model_path_1 = 'logs_random/RoboSumo-Ant-vs-Ant-v0-0/checkpoints/00300'
-#model_path_2 = 'logs_latest/RoboSumo-Ant-vs-Ant-v0-0/checkpoints/00300'
-model_path_2 = "robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy"
-output_path = 'video_random_300_against_fix_test'
-mode = 'fix'
+model_path_1 = 'test_baseline_vtrace_timeout/RoboSumo-Ant-vs-Ant-v0-0/checkpoints/01300'
+model_path_2 = 'test_baseline_vtrace_timeout/RoboSumo-Ant-vs-Ant-v0-0/checkpoints/01300'
+# model_path_2 = "robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy"
+output_path = 'video_test'
+mode = 'checkpoint'
 length = 5000
+os.system('rm -r video_test')
 
 env = gym.make('RoboSumo-Ant-vs-Ant-v0')
 env.num_envs = 1
@@ -26,7 +27,7 @@ env.num_envs = 1
 for agent in env.agents:
     agent._adjust_z = -0.5
 
-#env = VideoRecorder(env, output_path, record_video_trigger=lambda x: True, video_length=length)
+env = VideoRecorder(env, output_path, record_video_trigger=lambda x: True, video_length=length)
 #env = Monitor(env, output_path, force=True)
 
 policy = [build_policy(env, 'mlp', num_hidden=64, activation=tf.nn.relu, value_network='copy'),
@@ -34,8 +35,8 @@ policy = [build_policy(env, 'mlp', num_hidden=64, activation=tf.nn.relu, value_n
 ob_space = env.observation_space[0]
 ac_space = env.action_space[0]
 
-from model import Model
-model_fn = Model
+from model import PPOModel
+model_fn = PPOModel
 
 model = [model_fn(policy=policy[0], ob_space=ob_space, ac_space=ac_space, nbatch_act=1, nbatch_train=None,
                   nsteps=None, ent_coef=None, vf_coef=None, max_grad_norm=None, trainable=False, model_scope="model_0"),
@@ -61,7 +62,7 @@ total_scores = [0, 0]
 total_shaping_reward = [0., 0.]
 
 sess = get_session()
-print (sess.run(model[1].get_variables())[-1])
+# print (sess.run(model[1].get_variables())[-1])
 
 #env.render('human')
 obs = env.reset()

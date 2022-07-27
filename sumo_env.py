@@ -51,6 +51,12 @@ class SumoEnv(Wrapper):
             self.episode_times.append(time.time() - self.tstart)
             epinfo.update(self.current_reset_info)
             info[0]['episode'] = epinfo
+            # include timeout check
+            # if sum(['winner' in x for x in info]) == 0:
+            #     print (info[0]['main_reward'])
+            if info[0]['main_reward'] == -1000:
+                for agt in info:
+                    agt['timeout'] = True
         self.total_steps += 1
         return ob, rew, done, info
 

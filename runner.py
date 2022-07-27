@@ -32,12 +32,14 @@ class Runner(AbstractEnvRunner):
     run():
     - Make a mini batch
     """
-    def __init__(self, *, env, models, nsteps, nagent, gamma, lam, anneal_bound=500):
+    def __init__(self, *, env, models, nsteps, nagent, gamma, lam, rho_bar, c_bar, anneal_bound=500):
         super().__init__(env=env, models=models, nsteps=nsteps, nagent=nagent, anneal_bound=anneal_bound)
         # Lambda used in GAE (General Advantage Estimation)
         self.lam = lam
         # Discount rate
         self.gamma = gamma
+        self.rho_bar = rho_bar
+        self.c_bar = c_bar
 
     def run(self, update):
         # Here, we init the lists that will contain the mb of experiences
@@ -48,14 +50,15 @@ class Runner(AbstractEnvRunner):
         mb_dones = [[] for _ in range(self.nagent)]
         mb_neglogpacs = [[] for _ in range(self.nagent)]
         # store the opponent's action probability to compute IS ratio
-        opponent_neglogpacs = []
+        mb_opponent_neglogpacs = [[] for _ in range(self.nagent)]
         # store opponent's observation and action to compute action probability
         opponent_obs, opponent_actions = [], []
 
         mb_states = self.states
         epinfos = []
         # For n in range number of steps
-        for _ in tqdm(range(self.nsteps)):
+        # for _ in tqdm(range(self.nsteps)):
+        for _ in range(self.nsteps):
             # Given observations, get action value and neglopacs
             # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
             all_actions = []
@@ -66,15 +69,25 @@ class Runner(AbstractEnvRunner):
                 mb_obs[agt].append(self.obs[:, agt, :].copy())
                 mb_actions[agt].append(actions)
                 mb_dones[agt].append(self.dones[:, agt])
+
+                # mb_values[agt].append(values)
+                # mb_neglogpacs[agt].append(neglogpacs)
+
+                # if agt == 1:
+                #     opponent_neglogpacs.append(neglogpacs)
+                #     opponent_obs.append(self.obs[:, 1, :].copy())
+                #     opponent_actions.append(actions)
+
                 if agt == 0:
                     mb_values[agt].append(values)
                     mb_neglogpacs[agt].append(neglogpacs)
+                    mb_opponent_neglogpacs[agt].append(self.models[1].act_model.action_probability(self.obs[:, agt, :], given_action=actions))
                 else:
-                    opponent_neglogpacs.append(neglogpacs)
+                    mb_opponent_neglogpacs[agt].append(neglogpacs)
                     
-                    #agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
-                    #agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], given_action=actions)
-                    agent_values, agent_neglogpacs = self.models[0].act_model.value_and_neglogp(self.obs[:, agt, :], given_action=actions)
+                    agent_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+                    agent_neglogpacs = self.models[0].act_model.action_probability(self.obs[:, agt, :], given_action=actions)
+                    #agent_values, agent_neglogpacs = self.models[0].act_model.value_and_neglogp(self.obs[:, agt, :], given_action=actions)
                     mb_values[agt].append(agent_values)
                     mb_neglogpacs[agt].append(agent_neglogpacs)
 
@@ -88,6 +101,9 @@ class Runner(AbstractEnvRunner):
             # obs shape: num_env * agent_num * ob dimension for each agent (120)
             # `dones` and `infos` shape: num_env * agent_num
             self.obs[:], rewards, self.dones, infos = self.env.step(all_actions)
+            # for info in infos:
+            #     if 'timeout' in info[0]:
+            #         print ('draw!')
             #print (self.obs.shape, self.dones.shape, len(infos), len(infos[0]))
             """
             info:
@@ -112,6 +128,8 @@ class Runner(AbstractEnvRunner):
                     rewards = np.zeros(self.nenv)
                     for e in range(self.nenv):
                         rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
+                        # if self.dones[e, agt] and 'timeout' in infos[e][agt]:
+                            # rewards[e] += self.gamma * self.models[0].value(self.obs[:, agt, :])[e]
                         if agt == 0:
                             maybeepinfo = infos[e][0].get('episode')
                             if maybeepinfo:
@@ -133,19 +151,31 @@ class Runner(AbstractEnvRunner):
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        mb_opponent_neglogpacs = np.asarray(mb_opponent_neglogpacs)
         #print (mb_obs.shape, mb_rewards.shape, mb_actions.shape, mb_values.shape, mb_neglogpacs.shape, mb_dones.shape)
 
-        opponent_neglogpacs = np.asarray(opponent_neglogpacs).swapaxes(0, 1).ravel()
         opponent_obs = np.asarray(opponent_obs, dtype=self.obs.dtype)
         opponent_actions = np.asarray(opponent_actions)
 
         # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
-        #mb_advs_vanilla = np.zeros_like(mb_rewards)
+        # compute importance sampling ratios
+        off_policy_ratio = np.exp(mb_opponent_neglogpacs[1] - mb_neglogpacs[1])
+        off_env_ratio = np.exp(mb_neglogpacs[0] - mb_opponent_neglogpacs[0])
+        ratio = off_policy_ratio * off_env_ratio
+        # V-trace
         for agt in range(self.nagent):
-            lastgaelam = 0
+            if agt == 0:
+                rho_clip = np.ones_like(ratio)
+                c_clip = np.ones_like(ratio)
+            else:
+                rho_clip = np.clip(ratio, None, self.rho_bar)
+                c_clip = np.clip(ratio, None, self.c_bar)
+            c_clip *= self.lam
+            # last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
             last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+            acc = np.zeros(ratio.shape[1])
             for t in reversed(range(self.nsteps)):
                 if t == self.nsteps - 1:
                     nextnonterminal = 1.0 - self.dones[:, agt]
@@ -153,15 +183,35 @@ class Runner(AbstractEnvRunner):
                 else:
                     nextnonterminal = 1.0 - mb_dones[agt, t + 1]
                     nextvalues = mb_values[agt, t + 1]
-                # delta = r + gamma * V(s') * (1 - done) - V(s)
-                delta = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t]
-                # For simplicity, don't use GAE for now
-                mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-                #mb_advs_vanilla[agt, t] = delta
-            mb_returns[agt] = mb_advs[agt] + mb_values[agt]
+                # delta = rho * [r + gamma * V(s') * (1 - done) - V(s)]
+                delta = rho_clip[t] * (mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t])
+                acc = delta + self.gamma * nextnonterminal * c_clip[t] * acc
+                mb_returns[agt, t] = mb_values[agt, t] + acc
+                if t == self.nsteps - 1:
+                    mb_advs[agt, t] = mb_rewards[agt, t] + self.gamma * nextnonterminal * last_values - mb_values[agt, t]
+                else:
+                    mb_advs[agt, t] = mb_rewards[agt, t] + self.gamma * nextnonterminal * mb_returns[agt, t + 1] - mb_values[agt, t]
+
+        # for agt in range(self.nagent):
+        #     lastgaelam = 0
+        #     # last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+        #     last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+        #     for t in reversed(range(self.nsteps)):
+        #         if t == self.nsteps - 1:
+        #             nextnonterminal = 1.0 - self.dones[:, agt]
+        #             nextvalues = last_values
+        #         else:
+        #             nextnonterminal = 1.0 - mb_dones[agt, t + 1]
+        #             nextvalues = mb_values[agt, t + 1]
+        #         # delta = r + gamma * V(s') * (1 - done) - V(s)
+        #         delta = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal - mb_values[agt, t]
+        #         # For simplicity, don't use GAE for now
+        #         mb_advs[agt, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+        #         #mb_advs_vanilla[agt, t] = delta
+        #     mb_returns[agt] = mb_advs[agt] + mb_values[agt]
         
-        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, opponent_obs, opponent_actions)),
-                mb_states[0], epinfos, opponent_neglogpacs)
+        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rewards, mb_opponent_neglogpacs, opponent_obs, opponent_actions)),
+                mb_states[0], epinfos, *map(sf0, (off_policy_ratio, off_env_ratio, ratio)))
 
 
 def sf01(arr):
@@ -172,9 +222,8 @@ def sf01(arr):
     return arr.swapaxes(1, 2).reshape(s[0], s[1] * s[2], *s[3:])
 
 
-def f0(arr):
+def sf0(arr):
     """
-    flatten axis 0 and 1
+    swap and flatten axis 0 and 1
     """
-    s = arr.shape
-    return arr.reshape(s[0] * s[1], *s[2:])
+    return arr.swapaxes(0, 1).ravel()
