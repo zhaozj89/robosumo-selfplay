@@ -1,6 +1,7 @@
 import tensorflow as tf
 import joblib
 import os
+import numpy as np
 from baselines.common.tf_util import get_session
 from baselines.common.tf_util import initialize
 
@@ -62,10 +63,12 @@ class PPOModel(object):
         self.IS_weight = IS_weight = tf.placeholder(tf.float32, [None])
 
         neglogpac = train_model.pd.neglogp(A)
+        # neglogpac = tf.debugging.check_numerics(neglogpac, 'nan in neglogpac')
 
         # Calculate the entropy
         # Entropy is used to improve exploration by limiting the premature convergence to suboptimal policy.
         entropy = tf.reduce_mean(train_model.pd.entropy())
+        # entropy = tf.debugging.check_numerics(entropy, 'nan in entropy')
 
         # CALCULATE THE LOSS
         # Total loss = Policy gradient loss - entropy * entropy coefficient + Value coefficient * value loss
@@ -73,9 +76,11 @@ class PPOModel(object):
         # Clip the value to reduce variability during Critic training
         # Get the predicted value
         vpred = train_model.vf
+        # vpred = tf.debugging.check_numerics(vpred, 'nan in vpred')
         #vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
         # Unclipped value
         vf_losses1 = tf.square(vpred - R)
+        # vf_losses1 = tf.debugging.check_numerics(vf_losses1, 'nan in value loss')
         # Clipped value
         #vf_losses2 = tf.square(vpredclipped - R)
 
@@ -86,6 +91,10 @@ class PPOModel(object):
 
         # Calculate ratio (pi current policy / pi old policy)
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
+        # ratio = tf.debugging.check_numerics(ratio, 'nan in ratio')
+        # avoid nan in ratio
+        ratio = tf.where(tf.is_nan(ratio), tf.ones_like(ratio) * 2., ratio)
+        self.log_ratio = OLDNEGLOGPAC - neglogpac
 
         # Defining Loss = - J is equivalent to max J
         pg_losses = -ADV * ratio
@@ -94,7 +103,8 @@ class PPOModel(object):
 
         # Final PG loss
         pg_loss = tf.reduce_mean(IS_weight * tf.maximum(pg_losses, pg_losses2))
-        approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
+        approxkl = tf.reduce_mean(neglogpac - OLDNEGLOGPAC)
+        # approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
 
         # Total loss
@@ -112,6 +122,10 @@ class PPOModel(object):
         # 3. Calculate the gradients
         grads_and_var = self.trainer.compute_gradients(loss, params)
         grads, var = zip(*grads_and_var)
+
+        # check nan in gradient
+        for i, grad in enumerate(grads):
+            grad = tf.debugging.check_numerics(grad, f'nan/inf in gradient {i}')
 
         if max_grad_norm is not None:
             # Clip the gradients (normalize)
@@ -170,6 +184,13 @@ class PPOModel(object):
         # Normalize the advantages
         advs = (advs - advs.mean()) / (advs.std() + 1e-8)
 
+        # check nan
+        # var_name = ['advs', 'actions', 'returns', 'rewards', 'IS_weight']
+        # for i, var in enumerate([advs, actions, returns, rewards, IS_weight]):
+        #     if np.isnan(var).sum() != 0:
+        #         print (f'NaN in {var_name[i]}')
+        #         exit()
+
         td_map = {
             self.train_model.X: obs,
             self.A: actions,
@@ -187,7 +208,7 @@ class PPOModel(object):
             td_map[self.train_model.M] = masks
 
         return self.sess.run(
-            self.stats_list + [self.merge_summary, self._train_op],
+            self.stats_list + [self.log_ratio, self.merge_summary, self._train_op],
             td_map
         )[:-1]
 

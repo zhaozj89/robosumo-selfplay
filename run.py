@@ -73,8 +73,8 @@ def configure_logger(log_path, **kwargs):
 def make_env_from_id(env_id, logger_dir, mpi_rank, subrank, seed, prefix):
     env = gym.make(env_id)
     if 'RoboSumo' in env_id:
-        for agent in env.agents:
-            agent._adjust_z = -0.5
+        # for agent in env.agents:
+        #     agent._adjust_z = -0.5
         env = SumoEnv(env, allow_early_resets=True, file_prefix=prefix)
     print (seed)
     env.seed(seed)
@@ -204,6 +204,8 @@ def main(args):
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default="./logs", type=str)
     parser.add_argument('--suffix', help='', default="default", type=str)
     parser.add_argument('--pg', type=str, default='ppo')
+    parser.add_argument('--vgap', type=int)
+    parser.add_argument('--kl_threshold', type=float)
 
     # implicit args: opponent_mode use_opponent_data
     args, unknown_args = parser.parse_known_args(args)

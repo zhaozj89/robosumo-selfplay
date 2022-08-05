@@ -26,7 +26,8 @@ def constfn(val):
 def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_data=None, eval_env=None, seed=None, nsteps=2048, ent_coef=0.0, lr=3e-4, vf_coef=0.5,
           max_grad_norm=0.5, gamma=0.99, lam=0.95, rho_bar=1., c_bar=1., log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
           save_interval=1, load_path=None, model_fn=None, update_fn=None, init_fn=None, mpi_rank_weight=1, comm=None,
-          nagent=1, anneal_bound=500, fix_opponent_path='robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy', **network_kwargs):
+          nagent=1, anneal_bound=500, fix_opponent_path='robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy', 
+          vgap=None, kl_threshold=0.01, **network_kwargs):
     '''
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
@@ -88,6 +89,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
 
     set_global_seeds(seed)
     print ('grad norm', max_grad_norm)
+    print ('max vgap', vgap)
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -278,44 +280,50 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         total_ratio_clip_frac.append(total_clip_frac)
 
         # discard the opponent samples where the action probability is too low
-        neglogp_threshold = 10.
+        # for computational stability
+        neglogp_threshold = 10000.
+        # neglogp_threshold = 50.
         usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
         # usable_index = np.where(models[0].act_model.action_probability(obs[1], given_action=actions[1]) < neglogp_threshold)[0]
         useless_ratio = 1. - len(usable_index) / len(neglogpacs[1])
         useful_ratio.append(1. - useless_ratio)
 
-        # # plot ratios for visualization
-        # plt.figure(figsize=(16, 9))
-        # plt.subplot(2, 2, 1)
-        # plt.hist(np.clip(np.log(off_policy_ratio), -5., 5.), bins=100)
-        # plt.ticklabel_format(useOffset=False)
-        # plt.title('off-policy ratio (log scale): %.2f%% clipped' %(off_policy_clip_frac * 100.))
-        # plt.subplot(2, 2, 2)
-        # plt.hist(np.clip(np.log(off_env_ratio), -5., 5.), bins=100)
-        # plt.ticklabel_format(useOffset=False)
-        # plt.title('off-env ratio (log scale): %.2f%% clipped' %(off_env_clip_frac * 100.))
-        # plt.subplot(2, 2, 3)
-        # plt.hist(np.clip(np.log(total_ratio), -5., 5.), bins=100)
-        # plt.ticklabel_format(useOffset=False)
-        # plt.title('off-policy-env ratio (log scale): %.2f%% clipped' %(total_clip_frac * 100.))
-        # plt.subplot(2, 2, 4)
-        # plt.hist(np.clip(neglogpacs[1].ravel(), -neglogp_threshold, neglogp_threshold), bins=100)
-        # plt.ticklabel_format(useOffset=False)
-        # plt.title('-neglogp of \pi_1(a^2|o^2)')
-        # if update == 1:
-        #     plt.suptitle('opponent version: 0')
-        # else:
-        #     plt.suptitle(f'opponent version: {idx}')
-        # os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
-        # plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
+        # plot ratios for visualization
+        plt.figure(figsize=(16, 9))
+        plt.subplot(2, 3, 1)
+        plt.hist(np.clip(np.log(off_policy_ratio), -100., None), bins=100)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('off-policy ratio (log scale): %.2f%% clipped' %(off_policy_clip_frac * 100.))
+        plt.subplot(2, 3, 2)
+        plt.hist(np.clip(np.log(off_env_ratio), -100., None), bins=100)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('off-env ratio (log scale): %.2f%% clipped' %(off_env_clip_frac * 100.))
+        plt.subplot(2, 3, 3)
+        plt.hist(np.clip(np.log(total_ratio), -100., None), bins=100)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('off-policy-env ratio (log scale): %.2f%% clipped' %(total_clip_frac * 100.))
+        plt.subplot(2, 2, 3)
+        plt.hist(np.clip(neglogpacs[0].ravel(), -neglogp_threshold, neglogp_threshold), bins=100)
+        plt.title('-log \pi_1(a^1|o^1)')
+        plt.subplot(2, 2, 4)
+        plt.hist(np.clip(neglogpacs[1].ravel(), -neglogp_threshold, neglogp_threshold), bins=100)
+        plt.ticklabel_format(useOffset=False)
+        plt.title('-log \pi_1(a^2|o^2)')
+        if update == 1:
+            plt.suptitle('opponent version: 0')
+        else:
+            plt.suptitle(f'opponent version: {idx}')
+        os.makedirs(osp.join(logger.get_dir(), 'fig'), exist_ok=True)
+        plt.savefig(osp.join(logger.get_dir(), 'fig', 'ratio_%d.png' %(update)))
+        plt.close()
 
         # logger.info('neglogp statistics check: max, min, inf, nan')
         # logger.info(f'{neglogpacs[1].max()}, {neglogpacs[1].min()}, {np.isinf(neglogpacs[1]).sum()}, {np.isnan(neglogpacs[1]).sum()}')
         # logger.info('opponent data value function check: max, min')
         # logger.info(f'{values[1].max()}, {values[1].min()}')
 
-        # if use_opponent_data is None or version_gap[-1] > 100:
-        if use_opponent_data is None or useless_ratio > 0.5:
+        # if use_opponent_data is None or (vgap is not None and version_gap[-1] > vgap):
+        if use_opponent_data is None:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
                 list(map(lambda x: x[0], (obs, returns, masks, actions, values, neglogpacs, rewards)))
         else:
@@ -348,7 +356,10 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             update_sample_num = obs.shape[0]
             inds = np.arange(update_sample_num)
 
+            ratio_all_epoch = []
+            early_stop = False
             for epoch in range(noptepochs):
+                ratio = np.zeros_like(inds, dtype=np.float32)
                 # Randomize the indexes
                 np.random.shuffle(inds)
                 # 0 to batch_size with batch_train_size step
@@ -361,7 +372,27 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                     writer.add_summary(temp_out[-1], (update - 1) * noptepochs * nminibatches + epoch * nminibatches + ii)
                     #for i in range(5):
                     #    logger.info(f'{model.loss_names[i]}: {temp_out[i].mean()}')
-                    mblossvals.append(temp_out[:-1])
+                    mblossvals.append(temp_out[:-2])
+                    batch_ratio = temp_out[-2]
+                    ratio[mbinds] = batch_ratio
+                    kl = temp_out[3]
+                    if kl_threshold is not None:
+                        if kl > kl_threshold * 1.5:
+                            early_stop = True
+                            break
+                ratio_all_epoch.append(ratio)
+                if early_stop:
+                    print (f'early stop at epoch {epoch} iter {ii} due to large approxkl')
+                    break
+            # plt.figure()
+            # for i in range(len(ratio_all_epoch)):
+            #     plt.subplot(2, 3, i + 1)
+            #     plt.hist(ratio_all_epoch[i][:nbatch], bins=100, histtype='step', label='own data')
+            #     plt.hist(ratio_all_epoch[i][nbatch:], bins=100, histtype='step', label='opponent data')
+            # plt.legend()
+            # plt.suptitle(f'version gap: {version_gap[-1]}')
+            # plt.savefig(osp.join(logger.get_dir(), 'fig', 'ppo_ratio_%d.png' %(update)))
+            # plt.close()
         else: # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches

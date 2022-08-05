@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 
 class AbstractEnvRunner(ABC):
@@ -101,6 +102,9 @@ class Runner(AbstractEnvRunner):
             # obs shape: num_env * agent_num * ob dimension for each agent (120)
             # `dones` and `infos` shape: num_env * agent_num
             self.obs[:], rewards, self.dones, infos = self.env.step(all_actions)
+            # for e in range(self.dones.shape[0]):
+            #     if self.dones[e].sum() != 0:
+            #         print (rewards[e])
             # for info in infos:
             #     if 'timeout' in info[0]:
             #         print ('draw!')
@@ -129,7 +133,8 @@ class Runner(AbstractEnvRunner):
                     for e in range(self.nenv):
                         rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
                         # if self.dones[e, agt] and 'timeout' in infos[e][agt]:
-                            # rewards[e] += self.gamma * self.models[0].value(self.obs[:, agt, :])[e]
+                            # print ('draw!')
+                            # rewards[e] += self.gamma * self.models[0].value(mb_obs[agt][-1])[e]
                         if agt == 0:
                             maybeepinfo = infos[e][0].get('episode')
                             if maybeepinfo:
@@ -144,7 +149,7 @@ class Runner(AbstractEnvRunner):
                             if maybeepinfo:
                                 epinfos.append(maybeepinfo)
         # batch of steps to batch of rollouts
-        # shape: n_agents * time_step * num_env ?
+        # shape: n_agents * time_step * num_env
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions)
@@ -192,10 +197,41 @@ class Runner(AbstractEnvRunner):
                 else:
                     mb_advs[agt, t] = mb_rewards[agt, t] + self.gamma * nextnonterminal * mb_returns[agt, t + 1] - mb_values[agt, t]
 
+        # # MC returns
+        # mc_mb_returns = np.zeros_like(mb_rewards)
         # for agt in range(self.nagent):
-        #     lastgaelam = 0
         #     # last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
         #     last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+        #     for t in reversed(range(self.nsteps)):
+        #         if t == self.nsteps - 1:
+        #             nextnonterminal = 1.0 - self.dones[:, agt]
+        #             nextvalues = last_values
+        #         else:
+        #             nextnonterminal = 1.0 - mb_dones[agt, t + 1]
+        #             nextvalues = mc_mb_returns[agt, t + 1]
+        #         # delta = rho * [r + gamma * V(s') * (1 - done) - V(s)]
+        #         mc_mb_returns[agt, t] = mb_rewards[agt, t] + self.gamma * nextvalues * nextnonterminal
+        # mc_mb_advs = mc_mb_returns - mb_values
+
+        # # compare online vtrace and MC returns
+        # plt.figure()
+        # for e in range(mc_mb_returns.shape[2]):
+        #     plt.subplot(2, 2, e + 1)
+        #     plt.plot(mc_mb_returns[0, :, e], label='MC')
+        #     plt.plot(mb_returns[0, :, e], label='vtrace')
+        #     print (mc_mb_returns[0, :, e] - mb_returns[0, :, e])
+        #     dones = np.where(mb_dones[0, :, e])[0]
+        #     for idx in dones:
+        #         plt.plot([idx, idx], [mc_mb_returns[0, :, e].min(), mc_mb_returns[0, :, e].max()], '--', c='k')
+        # plt.legend()
+        # plt.savefig('check_returns_%d.png'%(update))
+        # plt.close()
+
+        # GAE
+        # for agt in range(self.nagent):
+        #     lastgaelam = 0
+        #     last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
+        #     # last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
         #     for t in reversed(range(self.nsteps)):
         #         if t == self.nsteps - 1:
         #             nextnonterminal = 1.0 - self.dones[:, agt]
