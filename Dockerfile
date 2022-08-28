@@ -27,7 +27,7 @@ ENV LD_LIBRARY_PATH /home/$USER/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
 ENV LD_LIBRARY_PATH /usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
 # install packages
-RUN python3 -m pip install gym==0.15.4 mujoco-py==2.1.2.14 tensorflow==1.15.5 matplotlib
+RUN python3 -m pip install gym==0.15.4 mujoco-py==2.1.2.14 tensorflow==1.15.5 matplotlib pandas
 
 USER root
 COPY ./robosumo ./robosumo

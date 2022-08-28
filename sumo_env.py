@@ -1,5 +1,6 @@
 from gym.core import Wrapper
 import time
+import numpy as np
 
 
 class SumoEnv(Wrapper):
@@ -16,6 +17,7 @@ class SumoEnv(Wrapper):
         self.episode_lengths = []
         self.episode_times = []
         self.total_steps = 0
+        self.episode_step = 0
         self.current_reset_info = {} # extra info about the current episode, that was passed in during reset()
 
     def reset(self, **kwargs):
@@ -30,12 +32,15 @@ class SumoEnv(Wrapper):
             if v is None:
                 raise ValueError('Expected you to pass kwarg %s into reset'%k)
             self.current_reset_info[k] = v
-        return self.env.reset(**kwargs)
+        obs = self.env.reset(**kwargs)
+
+        self.episode_step = 0
+        return obs
 
     def step(self, action):
         if self.needs_reset:
             raise RuntimeError("Tried to step environment that needs reset")
-        ob, rew, done, info = self.env.step(action)
+        obs, rew, done, info = self.env.step(action)
         self.rewards.append(rew[0])
         self.dense_rewards.append(info[0]['shaping_reward'])
         if done[0]:
@@ -56,9 +61,15 @@ class SumoEnv(Wrapper):
             #     print (info[0]['main_reward'])
             if info[0]['main_reward'] == -1000:
                 for agt in info:
+                    # agt['main_reward'] = 0.
                     agt['timeout'] = True
         self.total_steps += 1
-        return ob, rew, done, info
+
+        self.episode_step += 1
+        for ob in obs:
+            ob[-1] += 2. * self.episode_step / 500.
+
+        return obs, rew, done, info
 
     def close(self):
         self.env.close()
