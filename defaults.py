@@ -41,9 +41,10 @@ def get_default_params(task, pg_method):
         return dict(
             nsteps=4096, #     nbatch = nenvs * nsteps
             nminibatches=64, #     nbatch_train = nbatch // nminibatches,     nupdates = total_timesteps//nbatch
-            lam=0.95,
+            lam=1.,
+            # lam=0.95,
             gamma=0.99,
-            rho_bar=1., 
+            rho_bar=10., 
             c_bar=1., 
             noptepochs=10,
             log_interval=1,

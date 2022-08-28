@@ -27,7 +27,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
           max_grad_norm=0.5, gamma=0.99, lam=0.95, rho_bar=1., c_bar=1., log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
           save_interval=1, load_path=None, model_fn=None, update_fn=None, init_fn=None, mpi_rank_weight=1, comm=None,
           nagent=1, anneal_bound=500, fix_opponent_path='robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy', 
-          vgap=None, kl_threshold=0.01, **network_kwargs):
+          vgap=None, kl_threshold=None, neglogp_threshold=10000., **network_kwargs):
     '''
     Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
 
@@ -174,6 +174,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
     ppo_clip_frac, approxkl = [], []
     version_gap = []
     useful_ratio = []
+    early_stop_info = []
 
     # number of iterations
     nupdates = total_timesteps//nbatch
@@ -281,7 +282,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
 
         # discard the opponent samples where the action probability is too low
         # for computational stability
-        neglogp_threshold = 10000.
+        # neglogp_threshold = 10000.
         # neglogp_threshold = 50.
         usable_index = np.where(neglogpacs[1] < neglogp_threshold)[0]
         # usable_index = np.where(models[0].act_model.action_probability(obs[1], given_action=actions[1]) < neglogp_threshold)[0]
@@ -322,8 +323,10 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
         # logger.info('opponent data value function check: max, min')
         # logger.info(f'{values[1].max()}, {values[1].min()}')
 
-        # if use_opponent_data is None or (vgap is not None and version_gap[-1] > vgap):
         if use_opponent_data is None:
+            obs, returns, masks, actions, values, neglogpacs, rewards = \
+                list(map(lambda x: x[0], (obs, returns, masks, actions, values, neglogpacs, rewards)))
+        elif vgap is not None and version_gap[-1] > vgap:
             obs, returns, masks, actions, values, neglogpacs, rewards = \
                 list(map(lambda x: x[0], (obs, returns, masks, actions, values, neglogpacs, rewards)))
         else:
@@ -358,14 +361,23 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
 
             ratio_all_epoch = []
             early_stop = False
-            for epoch in range(noptepochs):
+
+            actual_noptepochs = noptepochs
+            actual_nbatch_train = nbatch_train
+            # if use_opponent_data is None:
+            #     # actual_noptepochs = noptepochs * 2
+            #     actual_nbatch_train = nbatch_train // 2
+            # print ('epoch num', noptepochs, actual_noptepochs)
+            # print ('batch size', nbatch_train, actual_nbatch_train)
+
+            for epoch in range(actual_noptepochs):
                 ratio = np.zeros_like(inds, dtype=np.float32)
                 # Randomize the indexes
                 np.random.shuffle(inds)
                 # 0 to batch_size with batch_train_size step
                 # the minibatch number is doubled if we use opponent data
-                for ii, start in enumerate(range(0, update_sample_num, nbatch_train)):
-                    end = start + nbatch_train
+                for ii, start in enumerate(range(0, update_sample_num, actual_nbatch_train)):
+                    end = start + actual_nbatch_train
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs, rewards, weights))
                     temp_out = model.train(lrnow, cliprangenow, *slices)
@@ -383,6 +395,7 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                 ratio_all_epoch.append(ratio)
                 if early_stop:
                     print (f'early stop at epoch {epoch} iter {ii} due to large approxkl')
+                    early_stop_info.append([epoch, ii])
                     break
             # plt.figure()
             # for i in range(len(ratio_all_epoch)):
@@ -409,6 +422,11 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
                     temp_out = model.train(lrnow, cliprangenow, *slices, mbstates)
                     writer.add_summary(temp_out[-1], (update - 1) * noptepochs * nminibatches + epoch * nminibatches + ii)
                     mblossvals.append(temp_out[:-1])
+
+        if not early_stop:
+            early_stop_info.append(None)
+        with open(osp.join(logger.get_dir(), 'early_stop_info.pkl'), 'wb') as f:
+            pickle.dump(early_stop_info, f)
 
         # Feedforward --> get losses --> update
         lossvals = np.mean(mblossvals, axis=0)
@@ -446,50 +464,51 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
             print('Saving to', savepath)
             model.save(savepath)
         
-        if update % 100 == 0 or update == 1:
-            with open(osp.join(logger.get_dir(), 'ratio_summary.pkl'), 'wb') as f:
-                pickle.dump([version_gap, off_policy_ratio_mean, off_env_ratio_clip_frac, 
-                    off_env_ratio_mean, off_env_ratio_clip_frac, 
-                    total_ratio_mean, total_clip_frac, 
-                    ppo_clip_frac, approxkl], f)
-            size = 1.
-            plt.figure(figsize=(16, 9))
-            
-            plt.subplot(2, 4, 1)
-            plt.scatter(version_gap, off_policy_ratio_mean, s=size)
-            plt.title('off policy ratio')
-            plt.ylabel('ratio mean')
-            plt.subplot(2, 4, 5)
-            plt.scatter(version_gap, off_policy_ratio_clip_frac, s=size)
-            plt.ylabel('ratio clip frac')
-            plt.xlabel('version gap')
+        if opponent_mode == 'random':
+            if update % 100 == 0 or update == 1:
+                with open(osp.join(logger.get_dir(), 'ratio_summary.pkl'), 'wb') as f:
+                    pickle.dump([version_gap, off_policy_ratio_mean, off_env_ratio_clip_frac, 
+                        off_env_ratio_mean, off_env_ratio_clip_frac, 
+                        total_ratio_mean, total_clip_frac, 
+                        ppo_clip_frac, approxkl], f)
+                size = 1.
+                plt.figure(figsize=(16, 9))
+                
+                plt.subplot(2, 4, 1)
+                plt.scatter(version_gap, off_policy_ratio_mean, s=size)
+                plt.title('off policy ratio')
+                plt.ylabel('ratio mean')
+                plt.subplot(2, 4, 5)
+                plt.scatter(version_gap, off_policy_ratio_clip_frac, s=size)
+                plt.ylabel('ratio clip frac')
+                plt.xlabel('version gap')
 
-            plt.subplot(2, 4, 2)
-            plt.scatter(version_gap, off_env_ratio_mean, s=size)
-            plt.title('off env ratio')
-            plt.subplot(2, 4, 6)
-            plt.scatter(version_gap, off_env_ratio_clip_frac, s=size)
-            plt.xlabel('version gap')
+                plt.subplot(2, 4, 2)
+                plt.scatter(version_gap, off_env_ratio_mean, s=size)
+                plt.title('off env ratio')
+                plt.subplot(2, 4, 6)
+                plt.scatter(version_gap, off_env_ratio_clip_frac, s=size)
+                plt.xlabel('version gap')
 
-            plt.subplot(2, 4, 3)
-            plt.scatter(version_gap, total_ratio_mean, s=size)
-            plt.title('total ratio')
-            plt.subplot(2, 4, 7)
-            plt.scatter(version_gap, total_ratio_clip_frac, s=size)
-            plt.xlabel('version gap')
+                plt.subplot(2, 4, 3)
+                plt.scatter(version_gap, total_ratio_mean, s=size)
+                plt.title('total ratio')
+                plt.subplot(2, 4, 7)
+                plt.scatter(version_gap, total_ratio_clip_frac, s=size)
+                plt.xlabel('version gap')
 
-            plt.subplot(3, 4, 4)
-            plt.scatter(version_gap, ppo_clip_frac, s=size)
-            plt.title('ppo clip frac')
-            plt.subplot(3, 4, 8)
-            plt.scatter(version_gap, approxkl, s=size)
-            plt.title('approxkl')
-            plt.subplot(3, 4, 12)
-            plt.scatter(version_gap, useful_ratio, s=size)
-            plt.title('useful opponent data')
+                plt.subplot(3, 4, 4)
+                plt.scatter(version_gap, ppo_clip_frac, s=size)
+                plt.title('ppo clip frac')
+                plt.subplot(3, 4, 8)
+                plt.scatter(version_gap, approxkl, s=size)
+                plt.title('approxkl')
+                plt.subplot(3, 4, 12)
+                plt.scatter(version_gap, useful_ratio, s=size)
+                plt.title('useful opponent data')
 
-            plt.savefig(osp.join(logger.get_dir(), 'ratio_summary.png'))
-            plt.close()
+                plt.savefig(osp.join(logger.get_dir(), 'ratio_summary.png'))
+                plt.close()
 
     writer.close()
     return model

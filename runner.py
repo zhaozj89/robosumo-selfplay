@@ -10,6 +10,7 @@ class AbstractEnvRunner(ABC):
         self.models = models
         self.nenv = nenv = self.env.num_envs
         self.nagent = nagent
+        # add one dimension of time
         self.obs = np.zeros((nenv,) + (len(env.observation_space),) + env.observation_space[0].shape,
                             dtype=models[0].train_model.X.dtype.name)
         self.obs[:] = env.reset()
@@ -134,6 +135,7 @@ class Runner(AbstractEnvRunner):
                         rewards[e] = alpha * infos[e][agt]['shaping_reward'] + (1 - alpha) * infos[e][agt]['main_reward']
                         # if self.dones[e, agt] and 'timeout' in infos[e][agt]:
                             # print ('draw!')
+                            # print (infos[e][agt]['main_reward'])
                             # rewards[e] += self.gamma * self.models[0].value(mb_obs[agt][-1])[e]
                         if agt == 0:
                             maybeepinfo = infos[e][0].get('episode')
@@ -177,6 +179,7 @@ class Runner(AbstractEnvRunner):
             else:
                 rho_clip = np.clip(ratio, None, self.rho_bar)
                 c_clip = np.clip(ratio, None, self.c_bar)
+                # print ((rho_clip != 1).sum(), (c_clip != 1).sum())
             c_clip *= self.lam
             # last_values = self.models[agt].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])
             last_values = self.models[0].value(self.obs[:, agt, :], S=self.states[agt], M=self.dones[:, agt])

@@ -204,8 +204,8 @@ def main(args):
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default="./logs", type=str)
     parser.add_argument('--suffix', help='', default="default", type=str)
     parser.add_argument('--pg', type=str, default='ppo')
-    parser.add_argument('--vgap', type=int)
-    parser.add_argument('--kl_threshold', type=float)
+    # parser.add_argument('--vgap', type=int)
+    # parser.add_argument('--kl_threshold', type=float)
 
     # implicit args: opponent_mode use_opponent_data
     args, unknown_args = parser.parse_known_args(args)
