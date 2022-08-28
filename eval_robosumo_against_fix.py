@@ -29,6 +29,7 @@ from baselines.bench import Monitor
 from tensorflow.contrib import layers
 
 from robosumo.policy_zoo.utils import *
+from sumo_env import SumoEnv
 
 
 class Policy(object):
@@ -109,7 +110,7 @@ def make_env_from_id(env_id, logger_dir, mpi_rank, subrank, seed, prefix):
     env = gym.make(env_id)
     for agent in env.agents:
         agent._adjust_z = -0.5
-    #env = SumoEnv(env, allow_early_resets=True, file_prefix=prefix)
+    env = SumoEnv(env, allow_early_resets=True, file_prefix=prefix)
     env.seed(seed)
     #env = Monitor(env, logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)), allow_early_resets=True)
     return env
