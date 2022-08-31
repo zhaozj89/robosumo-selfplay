@@ -209,6 +209,8 @@ class Agent(object):
                 opp.get_qpos()[:7].flat,    # opponent torso position
                 opp_forces.flat,            # opponent torso forces
             ])
+        # placeholder for the timestep feature
+        obs.extend(np.array([[-1.]]))
         return np.concatenate(obs)
 
     def before_step(self):
