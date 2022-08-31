@@ -178,20 +178,32 @@ def train(args, extra_args):
 
     if algo == 'ppo':
         from alg_ppo import learn
+        model = learn(
+            env=env,
+            seed=seed,
+            total_timesteps=total_timesteps,
+            nagent=nagent,
+            **alg_kwargs
+        )
     elif algo == 'ac':
         from alg_ac import learn
+        model = learn(
+            env=env,
+            seed=seed,
+            total_timesteps=total_timesteps,
+            nagent=nagent,
+            **alg_kwargs
+        )
     elif algo == 'td3':
         from alg_td3 import learn
+        model = learn(
+            env=env,
+            seed=seed,
+            total_timesteps=total_timesteps,
+        )
     else:
         raise NotImplementedError
 
-    model = learn(
-        env=env,
-        seed=seed,
-        total_timesteps=total_timesteps,
-        nagent=nagent,
-        **alg_kwargs
-    )
 
     return model, env
 
