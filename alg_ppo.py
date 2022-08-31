@@ -8,7 +8,6 @@ from baselines.common import explained_variance, set_global_seeds
 from policies import build_policy
 from runner import Runner
 import tensorflow as tf
-import copy
 import pickle
 
 from robosumo.policy_zoo.utils import load_params, set_from_flat
@@ -28,64 +27,6 @@ def learn(*, network, env, total_timesteps, opponent_mode='ours', use_opponent_d
           save_interval=1, load_path=None, model_fn=None, update_fn=None, init_fn=None, mpi_rank_weight=1, comm=None,
           nagent=1, anneal_bound=500, fix_opponent_path='robosumo/robosumo/policy_zoo/assets/ant/mlp/agent-params-v3.npy', 
           vgap=None, kl_threshold=0.01, **network_kwargs):
-    '''
-    Learn policy using PPO algorithm (https://arxiv.org/abs/1707.06347)
-
-    Parameters:
-    ----------
-
-    network:                          policy network architecture. Either string (mlp, lstm, lnlstm, cnn_lstm, cnn, cnn_small, conv_only - see baselines.common/models.py for full list)
-                                      specifying the standard network architecture, or a function that takes tensorflow tensor as input and returns
-                                      tuple (output_tensor, extra_feed) where output tensor is the last network layer output, extra_feed is None for feed-forward
-                                      neural nets, and extra_feed is a dictionary describing how to feed state into the network for recurrent neural nets.
-                                      See common/models.py/lstm for more details on using recurrent nets in policies
-
-    env: baselines.common.vec_env.VecEnv     environment. Needs to be vectorized for parallel environment simulation.
-                                      The environments produced by gym.make can be wrapped using baselines.common.vec_env.DummyVecEnv class.
-
-
-    nsteps: int                       number of steps of the vectorized environment per update (i.e. batch size is nsteps * nenv where
-                                      nenv is number of environment copies simulated in parallel)
-
-    total_timesteps: int              number of timesteps (i.e. number of actions taken in the environment)
-
-    ent_coef: float                   policy entropy coefficient in the optimization objective
-
-    lr: float or function             learning rate, constant or a schedule function [0,1] -> R+ where 1 is beginning of the
-                                      training and 0 is the end of the training.
-
-    vf_coef: float                    value function loss coefficient in the optimization objective
-
-    max_grad_norm: float or None      gradient norm clipping coefficient
-
-    gamma: float                      discounting factor
-
-    lam: float                        advantage estimation discounting factor (lambda in the paper)
-
-    log_interval: int                 number of timesteps between logging events
-
-    nminibatches: int                 number of training minibatches per update. For recurrent policies,
-                                      should be smaller or equal than number of environments run in parallel.
-
-    noptepochs: int                   number of training epochs per update
-
-    cliprange: float or function      clipping range, constant or schedule function [0,1] -> R+ where 1 is beginning of the training
-                                      and 0 is the end of the training
-
-    save_interval: int                number of timesteps between saving events
-
-    load_path: str                    path to load the model from
-
-    nagent: int                       number of agents in an environment
-
-    anneal_bound: int                 the number of iterations it takes for dense reward anneal to 0
-
-    **network_kwargs:                 keyword arguments to the policy / network builder. See baselines.common/policies.py/build_policy and arguments to a particular type of network
-                                      For instance, 'mlp' network architecture has arguments num_hidden and num_layers.
-
-
-
-    '''
 
     set_global_seeds(seed)
     print ('grad norm', max_grad_norm)

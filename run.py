@@ -150,7 +150,7 @@ def train(args, extra_args):
     # assert args.env[:8] == 'RoboSumo'
 
     env_id = args.env
-    pg_method = args.pg
+    algo = args.algo
     print (args)
 
     # build a temporary environment to get number of agents
@@ -161,7 +161,7 @@ def train(args, extra_args):
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
 
-    alg_kwargs = get_default_params(env_id, pg_method)
+    alg_kwargs = get_default_params(env_id, algo)
     alg_kwargs.update(extra_args)
 
     env = build_env(args)
@@ -176,10 +176,14 @@ def train(args, extra_args):
     with open(os.path.join(args.log_path, 'config.pkl'), 'wb') as f:
         pickle.dump([args, alg_kwargs], f)
 
-    if pg_method == 'ppo':
-        from alg import learn
-    else:
+    if algo == 'ppo':
+        from alg_ppo import learn
+    elif algo == 'ac':
         from alg_ac import learn
+    elif algo == 'td3':
+        from alg_td3 import learn
+    else:
+        raise NotImplementedError
 
     model = learn(
         env=env,
@@ -203,7 +207,7 @@ def main(args):
     parser.add_argument('--save_path', help='Path to save trained model to', default=".", type=str)
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default="./logs", type=str)
     parser.add_argument('--suffix', help='', default="default", type=str)
-    parser.add_argument('--pg', type=str, default='ppo')
+    parser.add_argument('--algo', type=str, choices=["ppo", "ac", "td3"], default='ppo')
     parser.add_argument('--vgap', type=int)
     parser.add_argument('--kl_threshold', type=float)
 

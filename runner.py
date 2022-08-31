@@ -23,7 +23,6 @@ class AbstractEnvRunner(ABC):
     def run(self, update):
         raise NotImplementedError
 
-
 class Runner(AbstractEnvRunner):
     """
     We use this object to make a mini batch of experiences with 1 trainable agent and old-version agents
